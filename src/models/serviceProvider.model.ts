@@ -4,7 +4,7 @@ interface IServiceProvider extends Document {
   name: string;
   email: string;
   phone: string;
-  password: String;
+  password: string;
   profilePicture: String;
   bio: String;
   skills: string[];
@@ -15,11 +15,7 @@ interface IServiceProvider extends Document {
     year: Number;
     certificateUrl: String;
   }>;
-  pricing?: {
-    pricingType: String
-    baseCharge: Number;
-    rate: Number;
-  };
+  pricingType?: String;
   availabilityStatus: String;
   workingHours: {
     from: String;
@@ -67,12 +63,11 @@ const serviceProviderSchema = new mongoose.Schema<IServiceProvider>(
     skills: [
       {
         type: String,
-        required: true,
       },
     ],
     experienceYears: {
-        type: Number,
-        default: 0
+      type: Number,
+      default: 0,
     },
     certifications: [
       {
@@ -90,25 +85,13 @@ const serviceProviderSchema = new mongoose.Schema<IServiceProvider>(
         },
         certificateUrl: {
           type: String,
-          required: true,
         },
       },
     ],
-    pricing: {
-      pricingType: {
-        type: String,
-        enum: ["hourly", "fixed", "per-job", "per-visit", "quote"],
-        default: "per-visit",
-      },
-      baseCharge: {
-        type: Number,
-        required: true,
-        min: 0,
-      },
-      rate: {
-        type: Number,
-        min: 0,
-      },
+    pricingType: {
+      type: String,
+      enum: ["hourly", "fixed", "per-job", "per-visit", "quote"],
+      default: "per-visit",
     },
     availabilityStatus: {
       type: String,
