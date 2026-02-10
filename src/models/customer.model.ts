@@ -16,6 +16,8 @@ interface ICustomer {
   isActive: boolean;
   lastLogin?: Date;
   deactivatedAt?: Date;
+  reactivationToken?: string;
+  reactivationExpires?: Date;
 }
 
 const customerSchema = new Schema<ICustomer>(
@@ -53,10 +55,16 @@ const customerSchema = new Schema<ICustomer>(
       type: Boolean,
       default: true,
     },
-    deactivatedAt: {
-      type: Date,
-    },
+    deactivatedAt: Date,
     lastLogin: Date,
+    reactivationToken: {
+      type: String,
+      select: false,
+    },
+    reactivationExpires: {
+      type: Date,
+      select: false,
+    },
   },
   { timestamps: true },
 );
