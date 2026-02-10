@@ -2,8 +2,9 @@ import Customer from "#models/customer.model.js";
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import crypto from "crypto"
+import crypto from "crypto";
 import { sendReactivationMail } from "#services/email.service.js";
+import ServiceRequests from "#models/serviceRequests.model.js";
 
 export const registerCustomer = async (req: Request, res: Response) => {
   try {
@@ -120,7 +121,10 @@ export const loginCustomer = async (req: Request, res: Response) => {
 
     // generate token
     const token = jwt.sign(
-      { id: checkCustomer._id },
+      { 
+        id: checkCustomer._id,
+        role: "customer"
+      },
       process.env.JWT_SECRET_KEY || "secret",
       { expiresIn: "7d" },
     );
@@ -216,6 +220,22 @@ export const deactivateAccount = async (req: Request, res: Response) => {
       return;
     }
 
+    // check for active services
+    const activeServices = await ServiceRequests.countDocuments({
+      customerId: userId,
+      status: {
+        $in: ["requested", "assigned", "in_progress"],
+      },
+    });
+
+    if (activeServices > 0) {
+      res.status(400).json({
+        message: `Cannot deactivate account. You have ${activeServices} active service(s). Please complete or cancel them first`,
+        success: false,
+      });
+      return;
+    }
+
     customer.isActive = false;
     customer.deactivatedAt = new Date();
     await customer.save();
@@ -258,71 +278,78 @@ export const deleteInactiveAccounts = async () => {
 
 export const requestReactivation = async (req: Request, res: Response) => {
   try {
-    const {email} = req.body
+    const { email } = req.body;
 
-    if(!email){
+    if (!email) {
       res.status(400).json({
         message: "Email is required",
-        success: false
-      })
-      return
+        success: false,
+      });
+      return;
     }
 
     // always return success if account exists or not
-    const customer = await Customer.findOne({email})
-    if(!customer) {
+    const customer = await Customer.findOne({ email });
+    if (!customer) {
       res.status(200).json({
-        message: "If an account exits with this email, reactivation instructions have been sent.",
-        success: false
-      })
-      return
+        message:
+          "If an account exits with this email, reactivation instructions have been sent.",
+        success: true,
+      });
+      return;
     }
 
     // check if account is already active
-    if(customer.isActive) {
+    if (customer.isActive) {
       res.status(400).json({
         message: "Account is already active. Please login",
-        success: false
-      })
-      return
+        success: false,
+      });
+      return;
     }
 
     // check if 30 day grace period has expired or not
-    if(!customer.deactivatedAt) {
+    if (!customer.deactivatedAt) {
       res.status(400).json({
         message: "Invalid account state. Please contact support.",
-        success: false
-      })
-      return
+        success: false,
+      });
+      return;
     }
 
-    const daySinceDeactivation = (Date.now() - customer.deactivatedAt.getTime()) / (1000 * 60 * 60 * 24)
+    const daySinceDeactivation =
+      (Date.now() - customer.deactivatedAt.getTime()) / (1000 * 60 * 60 * 24);
 
-    if(daySinceDeactivation > 30) {
+    if (daySinceDeactivation > 30) {
       res.status(400).json({
-        message: "Grace period of 30 days has expired. Account cannot be reactivated !",
-        success: false
-      })
-      return
+        message:
+          "Grace period of 30 days has expired. Account cannot be reactivated !",
+        success: false,
+      });
+      return;
     }
 
     // generating random token for sending reactivationToken to email
-    const reactivationToken = crypto.randomBytes(32).toString("hex")
-    const reactivationExpires = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
+    const reactivationToken = crypto.randomBytes(32).toString("hex");
+    const reactivationExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     // saving token to db
-    customer.reactivationToken = reactivationToken
-    customer.reactivationExpires = reactivationExpires
-    await customer.save()
+    customer.reactivationToken = reactivationToken;
+    customer.reactivationExpires = reactivationExpires;
+    await customer.save();
 
     // sending email
-    await sendReactivationMail(customer.email, customer.name, reactivationToken)
+    await sendReactivationMail(
+      customer.email,
+      customer.name,
+      reactivationToken,
+    );
 
     res.status(200).json({
       message: "Reactivation mail sent. Please check your inbox !",
-      success: true
-    })
-    return
+      success: true,
+    });
+    return;
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -331,48 +358,52 @@ export const requestReactivation = async (req: Request, res: Response) => {
     });
     return;
   }
-}
+};
 
-export const verifyAndReactivateAccount = async (req: Request, res: Response) => {
+export const verifyAndReactivateAccount = async (
+  req: Request,
+  res: Response,
+) => {
   try {
-    const {token} = req.params
+    const { token } = req.params;
 
-    if(!token) {
+    if (!token) {
       res.status(400).json({
         message: "Reactivation Token is required",
-        success: false
-      })
-      return
+        success: false,
+      });
+      return;
     }
 
     // find customer with valid token
     const customer = await Customer.findOne({
       reactivationToken: token,
       reactivationExpires: {
-        $gt: Date.now()
-      }
-    }).select("+reactivationToken +reactivationExpires")
+        $gt: Date.now(),
+      },
+    }).select("+reactivationToken +reactivationExpires");
 
-    if(!customer) {
+    if (!customer) {
       res.status(400).json({
-        message: "Invalid or expired token. Please request a new reactivation link.",
-        success: false
-      })
-      return
+        message:
+          "Invalid or expired token. Please request a new reactivation link.",
+        success: false,
+      });
+      return;
     }
 
     // reactivate account
-    customer.isActive = true
-    customer.deactivatedAt = undefined
-    customer.reactivationToken = undefined
-    customer.reactivationExpires = undefined
-    await customer.save()
+    customer.isActive = true;
+    customer.deactivatedAt = undefined;
+    customer.reactivationToken = undefined;
+    customer.reactivationExpires = undefined;
+    await customer.save();
 
     res.status(200).json({
       message: "Account reactivated successfully! You can now login",
-      success: true
-    })
-    return
+      success: true,
+    });
+    return;
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -381,4 +412,4 @@ export const verifyAndReactivateAccount = async (req: Request, res: Response) =>
     });
     return;
   }
-}
+};

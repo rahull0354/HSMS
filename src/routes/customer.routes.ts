@@ -1,16 +1,31 @@
-import { loginCustomer, registerCustomer, updateCustomerDetails, deactivateAccount, requestReactivation, verifyAndReactivateAccount } from "#controllers/user.controller.js"
-import { authMiddleware } from "#middlewares/auth.middleware.js"
-import express from "express"
+import {
+  loginCustomer,
+  registerCustomer,
+  updateCustomerDetails,
+  deactivateAccount,
+  requestReactivation,
+  verifyAndReactivateAccount,
+} from "#controllers/user.controller.js";
+import { authMiddleware } from "#middlewares/auth.middleware.js";
+import express from "express";
 
-const router = express.Router()
+const router = express.Router();
 
-router.post("/register", registerCustomer)
-router.post("/login", loginCustomer)
-router.put("/update-profile", authMiddleware, updateCustomerDetails)
-router.post("/deactivate-account", authMiddleware, deactivateAccount)
+router.post("/register", registerCustomer);
+router.post("/login", loginCustomer);
+router.post("/request-reactivation", requestReactivation);
+router.get("/reactivate-account/:token", verifyAndReactivateAccount);
 
-// reactivation routes
-router.post("/request-reactivation", requestReactivation)
-router.get("/reactivate-account/:token", verifyAndReactivateAccount)
+// middleware-protected routes
+router.put(
+  "/update-profile",
+  authMiddleware(["customer"]),
+  updateCustomerDetails,
+);
+router.post(
+  "/deactivate-account",
+  authMiddleware(["customer"]),
+  deactivateAccount,
+);
 
-export default router
+export default router;
