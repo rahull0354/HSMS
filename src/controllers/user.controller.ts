@@ -3,7 +3,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import { sendReactivationMail } from "#services/email.service.js";
+import { sendCustomerReactivationMail } from "#services/email.service.js";
 import ServiceRequests from "#models/serviceRequests.model.js";
 
 export const registerCustomer = async (req: Request, res: Response) => {
@@ -220,6 +220,14 @@ export const deactivateAccount = async (req: Request, res: Response) => {
       return;
     }
 
+    if(!customer.isActive) {
+      res.status(400).json({
+        message: "Account Already Deactivated !",
+        success: false
+      })
+      return
+    }
+
     // check for active services
     const activeServices = await ServiceRequests.countDocuments({
       customerId: userId,
@@ -256,7 +264,7 @@ export const deactivateAccount = async (req: Request, res: Response) => {
 };
 
 // Cleanup function to permanently delete accounts deactivated more than 30 days ago
-export const deleteInactiveAccounts = async () => {
+export const deleteInactiveCustomerAccounts = async () => {
   try {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -268,7 +276,7 @@ export const deleteInactiveAccounts = async () => {
 
     if (result.deletedCount > 0) {
       console.log(
-        `[Cleanup] Deleted ${result.deletedCount} inactive accounts (older than 30 days)`,
+        `[Cleanup] Deleted ${result.deletedCount} inactive CUSTOMER accounts (older than 30 days)`,
       );
     }
   } catch (error) {
@@ -339,7 +347,7 @@ export const requestReactivation = async (req: Request, res: Response) => {
     await customer.save();
 
     // sending email
-    await sendReactivationMail(
+    await sendCustomerReactivationMail(
       customer.email,
       customer.name,
       reactivationToken,
