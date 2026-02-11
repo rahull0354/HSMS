@@ -32,6 +32,9 @@ interface IServiceProvider extends Document {
   isActive: Boolean;
   isSuspended: Boolean;
   suspensionReason?: String;
+  deactivatedAt?: Date;
+  reactivationToken?: string;
+  reactivationExpires?: Date;
   lastLogin: Date;
 }
 
@@ -131,6 +134,15 @@ const serviceProviderSchema = new mongoose.Schema<IServiceProvider>(
     },
     suspensionReason: String,
     lastLogin: Date,
+    deactivatedAt: Date,
+    reactivationToken: {
+      type: String,
+      select: false,
+    },
+    reactivationExpires: {
+      type: Date,
+      select: false,
+    },
   },
   { timestamps: true },
 );
