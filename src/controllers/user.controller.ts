@@ -121,9 +121,9 @@ export const loginCustomer = async (req: Request, res: Response) => {
 
     // generate token
     const token = jwt.sign(
-      { 
+      {
         id: checkCustomer._id,
-        role: "customer"
+        role: "customer",
       },
       process.env.JWT_SECRET_KEY || "secret",
       { expiresIn: "7d" },
@@ -220,12 +220,12 @@ export const deactivateAccount = async (req: Request, res: Response) => {
       return;
     }
 
-    if(!customer.isActive) {
+    if (!customer.isActive) {
       res.status(400).json({
         message: "Account Already Deactivated !",
-        success: false
-      })
-      return
+        success: false,
+      });
+      return;
     }
 
     // check for active services
@@ -416,6 +416,34 @@ export const verifyAndReactivateAccount = async (
     console.error(error);
     res.status(500).json({
       message: "Error Reactivating Account",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getProfileDetails = async (req: Request, res: Response) => {
+  try {
+    const customerId = (req as any).user.id;
+
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      res.status(404).json({
+        message: "User details not found",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Profile details for ${customer.name}: `,
+      customer,
+      success: true,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching profile details !",
       success: false,
     });
     return;

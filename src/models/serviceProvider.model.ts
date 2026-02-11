@@ -35,7 +35,7 @@ interface IServiceProvider extends Document {
   deactivatedAt?: Date;
   reactivationToken?: string;
   reactivationExpires?: Date;
-  lastLogin: Date;
+  lastLogin?: Date;
 }
 
 const serviceProviderSchema = new mongoose.Schema<IServiceProvider>(
