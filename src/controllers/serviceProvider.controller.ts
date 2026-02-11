@@ -89,7 +89,7 @@ export const loginServiceProvider = async (req: Request, res: Response) => {
     if (!checkServiceProvider) {
       res.status(404).json({
         message: "Provider not found",
-        sucess: false,
+        success: false,
       });
       return;
     }
@@ -100,6 +100,7 @@ export const loginServiceProvider = async (req: Request, res: Response) => {
         message: "Your account is deactivated. Please reactivate to continue.",
         success: false,
       });
+      return;
     }
 
     // password matching
@@ -197,7 +198,8 @@ export const updateServiceProviderDetails = async (
     if (email) updateData.email = email;
     if (phone) updateData.phone = phone;
     if (password) updateData.password = await bcrypt.hash(password, 10);
-    if (profilePicture !== undefined) updateData.profilePiture = profilePicture;
+    if (profilePicture !== undefined)
+      updateData.profilePicture = profilePicture;
     if (bio !== undefined) updateData.bio = bio;
     if (skills !== undefined) {
       if (Array.isArray(skills)) {
@@ -305,7 +307,7 @@ export const updateServiceProviderDetails = async (
   } catch (error) {
     console.error(error);
     res.status(500).json({
-      message: "Error Logging Service Provider",
+      message: "Error Updating details for Service Provider",
       success: false,
     });
     return;
@@ -488,11 +490,11 @@ export const verifyAndReactivateAccount = async (
       return;
     }
 
-    // find provider with valid token
+    // Use raw MongoDB collection to bypass Mongoose select: false restriction
     const provider = await ServiceProvider.findOne({
       reactivationToken: token,
       reactivationExpires: {
-        $gt: Date.now(),
+        $gt: new Date(),
       },
     }).select("+reactivationToken +reactivationExpires");
 
@@ -505,11 +507,10 @@ export const verifyAndReactivateAccount = async (
       return;
     }
 
-    // reactivate account
     provider.isActive = true;
-    provider.deactivatedAt = undefined;
-    provider.reactivationToken = undefined;
-    provider.reactivationExpires = undefined;
+    provider.deactivatedAt = undefined as any;
+    provider.reactivationToken = undefined as any;
+    provider.reactivationExpires = undefined as any;
     await provider.save();
 
     res.status(200).json({
@@ -521,6 +522,319 @@ export const verifyAndReactivateAccount = async (
     console.error(error);
     res.status(500).json({
       message: "Error Reactivating Provider Account",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getProfileDetails = async (req: Request, res: Response) => {
+  try {
+    const serviceProviderId = (req as any).user.id;
+
+    const provider = await ServiceProvider.findById(serviceProviderId).select(
+      "-password -reactivationToken -reactivationExpires -suspensionReason -deactivatedAt",
+    );
+
+    if (!provider) {
+      res.status(404).json({
+        message: "Provider details not found",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Profile Details for ${provider.name}: `,
+      provider,
+      success: true,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Profile Details",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const toggleAvailability = async (req: Request, res: Response) => {
+  try {
+    const serviceProviderId = (req as any).user.id;
+    const { status } = req.body;
+
+    const validateStatus = ["available", "busy", "offline"];
+    if (!status || !validateStatus.includes(status)) {
+      res.status(400).json({
+        message: `Invalid status. Must be one of: ${validateStatus.join(", ")}`,
+        success: false,
+      });
+      return;
+    }
+
+    const provider = await ServiceProvider.findById(serviceProviderId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider not Found !",
+        success: false,
+      });
+      return;
+    }
+
+    // check if provider is suspended
+    if (provider.isSuspended) {
+      res.status(403).json({
+        message: "Cannot change availability. Account is suspended.",
+        success: false,
+      });
+      return;
+    }
+
+    // check if provider is active
+    if (!provider.isActive) {
+      res.status(403).json({
+        message: "Cannot change availability. Account is deactivated.",
+        success: false,
+      });
+      return;
+    }
+
+    // updating the availability status
+    provider.availabilityStatus = status;
+    await provider.save();
+
+    res.status(200).json({
+      message: `Availability updated to: ${status}`,
+      success: true,
+      availabilityStatus: provider.availabilityStatus,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Changing Availability",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getAllServiceProviders = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    const providers = await ServiceProvider.find({
+      isActive: true,
+      isSuspended: false,
+    })
+      .select(
+        "-password -reactivationToken -reactivationExpires -suspensionReason -deactivatedAt",
+      )
+      .skip(skip)
+      .limit(limit)
+      .sort({ averageRating: -1, totalJobsCompleted: -1 });
+
+    const totalProviders = await ServiceProvider.countDocuments({
+      isActive: true,
+      isSuspended: false,
+    });
+
+    res.status(200).json({
+      message: "Providers Retrieved Successfully",
+      success: true,
+      data: providers,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalProviders / limit),
+        totalProviders,
+        limit,
+        hasNext: page < Math.ceil(totalProviders / limit),
+        hasPrev: page > 1,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching all providers",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getPublicProfile = async (req: Request, res: Response) => {
+  try {
+    const { serviceProviderId } = req.params;
+
+    if (!serviceProviderId) {
+      res.status(400).json({
+        message: "Provider Id is required",
+        success: false,
+      });
+      return;
+    }
+
+    const provider = await ServiceProvider.findOne({
+      _id: serviceProviderId,
+      isActive: true,
+      isSuspended: false,
+    }).select(
+      "-password -reactivationToken -reactivationExpires -suspensionReason -deactivatedAt -lastLogin",
+    );
+
+    if (!provider) {
+      res.status(404).json({
+        message: "Provider not found or unavailable",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Profile Details for ${provider.name}: `,
+      success: true,
+      data: provider,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Public Profile",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const searchProviders = async (req: Request, res: Response) => {
+  try {
+    const {
+      skill,
+      city,
+      area,
+      minRating,
+      maxRating,
+      pricingType,
+      availabilityStatus,
+      sortBy = "averageRating",
+      order = "desc",
+      page = "1",
+      limit = "10",
+    } = req.query;
+
+    const pageNum = parseInt(page as string) || 1    
+    const limitNum = parseInt(limit as string) || 10
+    const skip = (pageNum - 1) * limitNum
+
+    // building filter object
+    const filter: any = {
+      isActive: true,
+      isSuspended: false
+    }
+
+    // filter by skills
+    if(skill) {
+      filter.skills = {
+        $in: [(skill as string).trim().toLowerCase()]
+      }
+    }
+
+    // filter by service area - city
+    if(city) {
+      filter["serviceArea.cities"] = {
+        $in: [(city as string).trim().toLocaleLowerCase()]
+      }
+    }
+
+    // filter by service area - area
+    if(area) {
+      filter["serviceArea.areas"] = {
+        $in: [(area as string).trim().toLowerCase()]
+      }
+    }
+
+    // filter by rating range
+    if(minRating || maxRating) {
+      filter.averageRating = {}
+      if(minRating) {
+        filter.averageRating.$gte = parseFloat(minRating as string)
+      }
+      if(maxRating) {
+        filter.averageRating.$lte = parseFloat(maxRating as string)
+      }
+    }
+
+    // filter by pricing type
+    if(pricingType) {
+      const validPricingTypes = ['hourly', 'fixed', 'per-job', 'per-visit', 'quote']
+      if(validPricingTypes.includes(pricingType as string)) {
+        filter.pricingType = pricingType
+      }
+    }
+
+    // filter by availability status
+    if(availabilityStatus) {
+      const validStatuses = ['available', 'busy', 'offline']
+      if(validStatuses.includes(availabilityStatus as string)) {
+        filter.availabilityStatus = availabilityStatus
+      }
+    }
+
+    // build sort object
+    const sortObj: any = {}
+    const validSortFields = [
+      "averageRating",
+      "totalReviews",
+      "totalJobsCompleted",
+      "experienceYears",
+      "name",
+      "createdAt"
+    ]
+
+    if(validSortFields.includes(sortBy as string)) {
+      sortObj[sortBy as string] = order ===  "asc" ? 1 : -1
+    } else {
+      sortObj.averageRating = -1 // default sort
+    }
+
+    const providers = await ServiceProvider.find(filter)
+    .select('-password -reactivationToken -reactivationExpires -suspensionReason -deactivatedAd -lastLogin')
+    .sort(sortObj)
+    .skip(skip)
+    .limit(limitNum)
+
+    const totalProviders = await ServiceProvider.countDocuments(filter)
+
+    res.status(200).json({
+      message: "Providers retrieved successfully",
+      success: true,
+      data: providers,
+      pagination: {
+        currentPage: pageNum,
+        totalPages: Math.ceil(totalProviders / limitNum),
+        totalProviders,
+        limit: limitNum,
+        hasNext: pageNum < Math.ceil(totalProviders / limitNum),
+        hasPrev: pageNum > 1
+      },
+      filters: {
+        skill: skill || null,
+        city: city || null,
+        area: area || null,
+        minRating: minRating || null,
+        maxRating: maxRating || null,
+        pricingType: pricingType || null,
+        availabilityStatus: availabilityStatus || null
+      }
+    })
+    return
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Applying search filters",
       success: false,
     });
     return;

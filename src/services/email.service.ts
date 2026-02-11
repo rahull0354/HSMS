@@ -20,7 +20,7 @@ export const sendCustomerReactivationMail = async (
   const transporter = createTransporter();
 
   // Backend API URL - use environment variable or default to localhost
-  const backendUrl = "http://localhost:3000";
+  const backendUrl = process.env.BACKEND_URL || "http://localhost:9000";
   const reactivationLink = `${backendUrl}/customer/reactivate-account/${reactivationToken}`;
 
   const mailOptions = {
@@ -98,8 +98,8 @@ export const sendServiceProviderReactivationMail = async (
   const transporter = createTransporter();
 
   // Backend API URL - use environment variable or default to localhost
-  const backendUrl = "http://localhost:3000";
-  const reactivationLink = `${backendUrl}/service-provider/reactivate-account/${reactivationToken}`;
+  const backendUrl = process.env.BACKEND_URL || "http://localhost:9000";
+  const reactivationLink = `${backendUrl}/serviceProvider/reactivate-account/${reactivationToken}`;
 
   const mailOptions = {
     from: `"HSMS" <${process.env.EMAIL_USER || "noreply@homeservice.com"}>`,
@@ -145,7 +145,7 @@ export const sendServiceProviderReactivationMail = async (
             <p style="font-size: 12px; color: #999;">If you didn't request to reactivate your account, please ignore this email or contact support if you have concerns.</p>
           </div>
           <div style="text-align: center; padding: 20px; font-size: 12px; color: #999;">
-            <p>&copy; ${new Date().getFullYear()} HomeService Management. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} HSMS. All rights reserved.</p>
           </div>
         </body>
       </html>
