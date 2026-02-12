@@ -1,3 +1,4 @@
+import Admin from "#models/admin.model.js";
 import Customer from "#models/customer.model.js";
 import ServiceProvider from "#models/serviceProvider.model.js";
 import { Request, Response, NextFunction } from "express";
@@ -38,6 +39,8 @@ export const authMiddleware = (allowedRoles: String[]) => {
         user = await Customer.findById(decoded.id)
       } else if (decoded.role === "serviceProvider") {
         user = await ServiceProvider.findById(decoded.id)
+      } else if(decoded.role === "admin") {
+        user = await Admin.findById(decoded.id)
       }
 
       if(!user) {
