@@ -2,6 +2,8 @@ import Admin from "#models/admin.model.js";
 import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import ServiceCategories from "#models/serviceCategories.model.js";
+import ServiceRequests from "#models/serviceRequests.model.js";
 
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -145,35 +147,454 @@ export const loginAdmin = async (req: Request, res: Response) => {
 
 export const getProfile = async (req: Request, res: Response) => {
   try {
-    const adminId = (req as any).user.id
+    const adminId = (req as any).user.id;
 
-    if(!adminId) {
-        res.status(400).json({
-            message: "Admin Id Not Found",
-            success: false
-        })
-        return
+    if (!adminId) {
+      res.status(400).json({
+        message: "Admin Id Not Found",
+        success: false,
+      });
+      return;
     }
 
-    const admin = await Admin.findById(adminId).select('-password')
-    if(!admin) {
-        res.status(404).json({
-            message: "Admin Not Found With this Details",
-            success: false
-        })
-        return
+    const admin = await Admin.findById(adminId).select("-password");
+    if (!admin) {
+      res.status(404).json({
+        message: "Admin Not Found With this Details",
+        success: false,
+      });
+      return;
     }
 
     res.status(200).json({
-        message: `Account Details for: ${admin.name}`,
-        success: true,
-        admin
-    })
-    return
+      message: `Account Details for: ${admin.name}`,
+      success: true,
+      admin,
+    });
+    return;
   } catch (error) {
     console.error(error);
     res.status(500).json({
       message: "Error Fetching Details for Admin",
+      success: false,
+    });
+    return;
+  }
+};
+
+// service categories management
+
+export const createCategory = async (req: Request, res: Response) => {
+  try {
+    const {
+      name,
+      slug,
+      description,
+      icon,
+      priceRange,
+      commonServices,
+      requiredSkills,
+    } = req.body;
+
+    if (!name || !slug) {
+      res.status(400).json({
+        message: "Name and slug are required to create a category",
+        success: false,
+      });
+      return;
+    }
+
+    const existingCategory = await ServiceCategories.findOne({
+      $or: [{ name }, { slug }],
+    });
+    if (existingCategory) {
+      res.status(400).json({
+        message: "Category with this name or slug already exists",
+        success: false,
+      });
+      return;
+    }
+
+    // validating price range
+    if (priceRange) {
+      if (priceRange.min !== undefined && priceRange.max !== undefined) {
+        if (priceRange.min >= priceRange.max) {
+          res.status(400).json({
+            message: "Minimum price must be less than maximum price",
+            success: false,
+          });
+          return;
+        }
+      }
+    }
+
+    // validate common services if provided
+    let validatedServices: any[] = [];
+    if (commonServices && Array.isArray(commonServices)) {
+      validatedServices = commonServices
+        .filter((service: any) => service.name)
+        .map((service: any) => ({
+          name: service.name,
+          typicalPrice: service.typicalPrice || 0,
+          duration: service.duration || "N/A",
+        }));
+    }
+
+    // validate required skills array if provided
+    let validatedSkills: string[] = [];
+    if (requiredSkills && Array.isArray(requiredSkills)) {
+      validatedSkills = requiredSkills
+        .filter((skill: any) => skill && typeof skill === "string")
+        .map((skill: any) => skill.trim().toLowerCase());
+    }
+
+    const category = new ServiceCategories({
+      name,
+      slug,
+      description,
+      icon,
+      priceRange,
+      commonServices: validatedServices,
+      requiredSkills: validatedSkills,
+    });
+    await category.save();
+
+    res.status(201).json({
+      message: "Service Category Created !",
+      success: true,
+      category,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Creating Service Category",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getAllCategories = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const isActive = req.query.isActive;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+
+    // building filter object
+    const filter: any = {};
+    if (isActive !== undefined) {
+      filter.isActive = isActive === "true";
+    }
+
+    // build sort object
+    const validSortFields = [
+      "name",
+      "createdAt",
+      "updatedAt",
+      "priceRange.min",
+    ];
+    const sortObj: any = {};
+    if (validSortFields.includes(sortBy)) {
+      sortObj[sortBy] = order === "asc" ? 1 : -1;
+    } else {
+      sortObj.createdAt = -1;
+    }
+
+    const categories = await ServiceCategories.find(filter)
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit);
+
+    const totalCategories = await ServiceCategories.countDocuments(filter);
+
+    res.status(200).json({
+      message: "Categories: ",
+      success: true,
+      data: categories,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCategories / limit),
+        totalCategories,
+        limit,
+        hasNext: page < Math.ceil(totalCategories / limit),
+        hasPrev: page > 1,
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Categories",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getCategoryById = async (req: Request, res: Response) => {
+  try {
+    const { categoryId } = req.params;
+
+    if (!categoryId) {
+      res.status(400).json({
+        message: "Category Id not provided",
+        success: false,
+      });
+      return;
+    }
+
+    const category = await ServiceCategories.findById(categoryId);
+    if (!category) {
+      res.status(404).json({
+        message: "Category Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `${category.name} Details: `,
+      success: true,
+      data: category,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Category BY ID",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const updateCategory = async (req: Request, res: Response) => {
+  try {
+    // solution to problem remaining: admin can register category with same names
+    const { categoryId } = req.params;
+    const {
+      name,
+      slug,
+      description,
+      icon,
+      priceRange,
+      commonServices,
+      requiredSkills,
+    } = req.body;
+
+    if (!categoryId) {
+      res.status(400).json({
+        message: "Category Id Not Provided !",
+        success: false,
+      });
+      return;
+    }
+
+    const category = await ServiceCategories.findById(categoryId);
+    if (!category) {
+      res.status(404).json({
+        message: "Category Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    const updateData: any = {};
+
+    if (name) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (icon !== undefined) updateData.icon = icon;
+    if (slug) updateData.slug = slug;
+
+    // validate and update price range
+    if (priceRange) {
+      if (
+        priceRange.min !== undefined &&
+        priceRange.max !== undefined &&
+        priceRange.min >= priceRange.max
+      ) {
+        res.status(400).json({
+          message: "Minimum price must be less than maximum price",
+          success: false,
+        });
+        return;
+      }
+      updateData.priceRange = priceRange;
+    }
+
+    // validate and update common services
+    if (commonServices !== undefined) {
+      if (Array.isArray(commonServices)) {
+        updateData.commonServices = commonServices
+          .filter((service: any) => service.name)
+          .map((service: any) => ({
+            name: service.name,
+            typicalPrice: service.typicalPrice || 0,
+            duration: service.duration || "N/A",
+          }));
+      }
+    }
+
+    // validate and update required skills
+    if (requiredSkills !== undefined) {
+      if (Array.isArray(requiredSkills)) {
+        updateData.requiredSkills = requiredSkills
+          .filter((skill: any) => skill && typeof skill === "string")
+          .map((skill: any) => skill.trim().toLowerCase());
+      }
+    }
+
+    if (name) {
+      const existingName = await ServiceCategories.findOne({
+        name: name.trim(),
+        _id: { $ne: categoryId as any },
+      });
+
+      if (existingName) {
+        res.status(400).json({
+          message: "Category Name already exists",
+          success: false,
+        });
+        return;
+      }
+
+      updateData.name = name;
+    }
+
+    if (slug) {
+      const normalSlug = slug.trim().toLowerCase();
+      const existingSlug = await ServiceCategories.findOne({
+        slug: normalSlug,
+        _id: { $ne: categoryId as any },
+      });
+
+      if (existingSlug) {
+        res.status(400).json({
+          message: "Category slug already exists",
+          success: false,
+        });
+        return;
+      }
+
+      updateData.slug = normalSlug;
+    }
+
+    const updatedCategory = await ServiceCategories.findByIdAndUpdate(
+      categoryId,
+      updateData,
+      { new: true },
+    );
+
+    res.status(200).json({
+      message: `Details for ${category.name} Updated !`,
+      success: true,
+      data: updatedCategory,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Updating Category Details",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const toggleCategoryStatus = async (req: Request, res: Response) => {
+  try {
+    const { categoryId } = req.params;
+
+    if (!categoryId) {
+      res.status(400).json({
+        message: "Status is not provided",
+        success: false,
+      });
+      return;
+    }
+
+    const category = await ServiceCategories.findById(categoryId);
+    if (!category) {
+      res.status(404).json({
+        message: "Category Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    category.isActive = !category.isActive;
+    await category.save();
+
+    res.status(200).json({
+      message: `Category ${category.isActive ? "activated" : "deactivated"} successfully !`,
+      success: true,
+      data: {
+        categoryId: category._id,
+        name: category.name,
+        isActive: category.isActive,
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Toggling the status of Category",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const deleteCategory = async (req: Request, res: Response) => {
+  try {
+    const { categoryId } = req.params;
+
+    if (!categoryId) {
+      res.status(400).json({
+        message: "Please provide category Id",
+        success: false,
+      });
+      return;
+    }
+
+    const category = await ServiceCategories.findByIdAndDelete(categoryId);
+    if (!category) {
+      res.status(404).json({
+        message: "No Category Found with this ID",
+        success: false,
+      });
+      return;
+    }
+
+    // check if there are any active requests inside the category
+    const requests = await ServiceRequests.countDocuments({
+      serviceCategoryId: categoryId as any,
+      status: {
+        $in: ["requested", "assigned", "in_progress"],
+      },
+    });
+
+    if (requests > 0) {
+      res.status(400).json({
+        message: `Cannot delete category. ${requests} active requests using this category. Please deactivate the category instead.`,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Category Deleted !`,
+      success: true,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Deleting Category",
       success: false,
     });
     return;
