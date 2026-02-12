@@ -4,7 +4,7 @@ interface IServiceRequests extends Document {
   customerId: mongoose.Schema.Types.ObjectId;
   serviceProviderId?: mongoose.Schema.Types.ObjectId;
   serviceType: string;
-  serviceCategoriesId: mongoose.Schema.Types.ObjectId;
+  serviceCategoryId: mongoose.Schema.Types.ObjectId;
   serviceTitle: string;
   serviceDescription: string;
   schedule: {
@@ -67,7 +67,7 @@ const serviceRequestsSchema = new mongoose.Schema<IServiceRequests>(
       type: String,
       required: true,
     },
-    serviceCategoriesId: {
+    serviceCategoryId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ServiceCategories",
       required: true,
@@ -96,7 +96,7 @@ const serviceRequestsSchema = new mongoose.Schema<IServiceRequests>(
       city: String,
       state: String,
       pincode: String,
-      landmarks: String
+      landmarks: String,
     },
     beforeImages: [String],
     afterImages: [String],
@@ -159,8 +159,8 @@ const serviceRequestsSchema = new mongoose.Schema<IServiceRequests>(
       nextServiceDate: Date,
     },
     parentRequestId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'ServiceRequests'
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ServiceRequests",
     },
     completedAt: Date,
   },
