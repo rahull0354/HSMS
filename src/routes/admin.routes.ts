@@ -2,11 +2,15 @@ import {
   createCategory,
   deleteCategory,
   getAllCategories,
+  getAllServiceProviders,
   getCategoryById,
   getProfile,
+  getServiceProviderById,
   loginAdmin,
   registerAdmin,
+  suspendProvider,
   toggleCategoryStatus,
+  unsuspendProvider,
   updateCategory,
 } from "#controllers/admin.controller.js";
 import { authMiddleware } from "#middlewares/auth.middleware.js";
@@ -38,6 +42,28 @@ router.delete(
   "/category/delete/:categoryId",
   authMiddleware(["admin"]),
   deleteCategory,
+);
+
+// service provider routes
+router.get(
+  "/serviceProviders",
+  authMiddleware(["admin"]),
+  getAllServiceProviders,
+);
+router.get(
+  "/serviceProvider/:serviceProviderId",
+  authMiddleware(["admin"]),
+  getServiceProviderById,
+);
+router.patch(
+  "/serviceProvider/suspend/:serviceProviderId",
+  authMiddleware(["admin"]),
+  suspendProvider,
+);
+router.patch(
+  "/serviceProvider/un-suspend/:serviceProviderId",
+  authMiddleware(["admin"]),
+  unsuspendProvider,
 );
 
 export default router;

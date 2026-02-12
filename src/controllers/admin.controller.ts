@@ -4,6 +4,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import ServiceCategories from "#models/serviceCategories.model.js";
 import ServiceRequests from "#models/serviceRequests.model.js";
+import ServiceProvider from "#models/serviceProvider.model.js";
+import { sendServiceProviderSuspensionMail, sendServiceProviderUnsuspensionMail } from "#services/email.service.js";
+
 
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -595,6 +598,265 @@ export const deleteCategory = async (req: Request, res: Response) => {
     console.error(error);
     res.status(500).json({
       message: "Error Deleting Category",
+      success: false,
+    });
+    return;
+  }
+};
+
+// service provider management
+
+export const getAllServiceProviders = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const isActive = req.query.isActive;
+    const isSuspended = req.query.isSuspended;
+    const search = req.query.search as string;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+
+    // building filter object
+    const filter: any = {};
+
+    if (isActive !== undefined) {
+      filter.isActive = isActive === "true";
+    }
+
+    if (isSuspended !== undefined) {
+      filter.isSuspended = isSuspended === "true";
+    }
+
+    // search functionality
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // building sort object
+    const validSortFields = [
+      "name",
+      "createdAt",
+      "email",
+      "averageRating",
+      "totalJobsCompleted",
+    ];
+    const sortObj: any = {};
+    if (validSortFields.includes(sortBy)) {
+      sortObj[sortBy] = order === "asc" ? 1 : -1;
+    } else {
+      sortObj.createdAt = -1;
+    }
+
+    const providers = await ServiceProvider.find(filter)
+      .select(
+        "-password -reactivationToken -suspensionReason -deactivatedAt -reactivationExpires",
+      )
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit);
+
+    const totalProviders = await ServiceProvider.countDocuments(filter);
+
+    res.status(200).json({
+      message: "Providers retrieved successfully",
+      success: true,
+      data: providers,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalProviders / limit),
+        totalProviders,
+        limit,
+        hasNext: page < Math.ceil(totalProviders / limit),
+        hasPrev: page > 1,
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Service Provider",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getServiceProviderById = async (req: Request, res: Response) => {
+  try {
+    const { serviceProviderId } = req.params;
+
+    if (!serviceProviderId) {
+      res.status(400).json({
+        message: "Service Provider Id Not provided",
+        success: false,
+      });
+      return;
+    }
+
+    const provider = await ServiceProvider.findById(serviceProviderId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Details for ${provider.name}: `,
+      success: true,
+      data: provider,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Service Provider BY ID",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const suspendProvider = async (req: Request, res: Response) => {
+  try {
+    const { serviceProviderId } = req.params;
+    const { suspensionReason } = req.body;
+
+    if (!serviceProviderId) {
+      res.status(400).json({
+        message: "Provider ID not found",
+        success: false,
+      });
+      return;
+    }
+
+    if (!suspensionReason) {
+      res.status(400).json({
+        message: "Please provide suspension reason",
+        success: false,
+      });
+      return;
+    }
+
+    const provider = await ServiceProvider.findById(serviceProviderId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider not found",
+        success: false,
+      });
+      return;
+    }
+
+    if (provider.isSuspended) {
+      res.status(400).json({
+        message: "Provider already suspended",
+        success: false,
+      });
+      return;
+    }
+
+    const activeRequests = await ServiceRequests.countDocuments({
+      serviceProviderId: serviceProviderId as any,
+      status: {
+        $in: ["assigned", "in_progress"],
+      },
+    });
+
+    if (activeRequests > 0) {
+      res.status(400).json({
+        message: `Cannot suspend account. Provider has ${activeRequests} active service request(s). Please complete or cancel them first.`,
+        success: false,
+      });
+      return;
+    }
+
+    // suspending the provider
+    provider.isSuspended = true;
+    provider.suspensionReason = suspensionReason;
+    provider.isActive = false;
+    await provider.save();
+
+    // sending suspension email
+    await sendServiceProviderSuspensionMail(
+      provider.email,
+      provider.name,
+      suspensionReason,
+    );
+
+    res.status(200).json({
+      message: `Account suspended for ${provider.name}`,
+      success: true,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Suspending Service Provider",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const unsuspendProvider = async (req: Request, res: Response) => {
+  try {
+    const {serviceProviderId} = req.params
+
+    if(!serviceProviderId) {
+        res.status(400).json({
+            message: "Provide ServiceProvider Id",
+            success: false
+        })
+        return
+    }
+
+    const provider = await ServiceProvider.findById(serviceProviderId)
+    if(!provider) {
+        res.status(404).json({
+            message: "Service Provider Not Found",
+            success: false
+        })
+        return
+    }
+
+    if(!provider.isSuspended) {
+        res.status(400).json({
+            message: "Provider Alrady Un-Suspended",
+            success: false
+        })
+        return
+    }
+
+    provider.isSuspended = false;
+    provider.isActive = true;
+    provider.suspensionReason = undefined;
+    await provider.save();
+
+    // send unsuspension email
+    await sendServiceProviderUnsuspensionMail(
+      provider.email,
+      provider.name,
+    );
+
+    res.status(200).json({
+        message: `Account un-suspended for ${provider.name}`,
+        success: true,
+        provider: {
+            id: provider._id,
+            name: provider.name,
+            email: provider.email
+        }
+    })
+    return
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Un-Suspending Service Provider",
       success: false,
     });
     return;
