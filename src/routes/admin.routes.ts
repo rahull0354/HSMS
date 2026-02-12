@@ -2,8 +2,10 @@ import {
   createCategory,
   deleteCategory,
   getAllCategories,
+  getAllCustomers,
   getAllServiceProviders,
   getCategoryById,
+  getCustomerById,
   getProfile,
   getServiceProviderById,
   loginAdmin,
@@ -65,5 +67,9 @@ router.patch(
   authMiddleware(["admin"]),
   unsuspendProvider,
 );
+
+// customer management routes
+router.get("/customers", authMiddleware(["admin"]), getAllCustomers);
+router.get("/customer/:customerId", authMiddleware(["admin"]), getCustomerById);
 
 export default router;

@@ -5,8 +5,11 @@ import jwt from "jsonwebtoken";
 import ServiceCategories from "#models/serviceCategories.model.js";
 import ServiceRequests from "#models/serviceRequests.model.js";
 import ServiceProvider from "#models/serviceProvider.model.js";
-import { sendServiceProviderSuspensionMail, sendServiceProviderUnsuspensionMail } from "#services/email.service.js";
-
+import {
+  sendServiceProviderSuspensionMail,
+  sendServiceProviderUnsuspensionMail,
+} from "#services/email.service.js";
+import Customer from "#models/customer.model.js";
 
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -805,31 +808,31 @@ export const suspendProvider = async (req: Request, res: Response) => {
 
 export const unsuspendProvider = async (req: Request, res: Response) => {
   try {
-    const {serviceProviderId} = req.params
+    const { serviceProviderId } = req.params;
 
-    if(!serviceProviderId) {
-        res.status(400).json({
-            message: "Provide ServiceProvider Id",
-            success: false
-        })
-        return
+    if (!serviceProviderId) {
+      res.status(400).json({
+        message: "Provide ServiceProvider Id",
+        success: false,
+      });
+      return;
     }
 
-    const provider = await ServiceProvider.findById(serviceProviderId)
-    if(!provider) {
-        res.status(404).json({
-            message: "Service Provider Not Found",
-            success: false
-        })
-        return
+    const provider = await ServiceProvider.findById(serviceProviderId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider Not Found",
+        success: false,
+      });
+      return;
     }
 
-    if(!provider.isSuspended) {
-        res.status(400).json({
-            message: "Provider Alrady Un-Suspended",
-            success: false
-        })
-        return
+    if (!provider.isSuspended) {
+      res.status(400).json({
+        message: "Provider Alrady Un-Suspended",
+        success: false,
+      });
+      return;
     }
 
     provider.isSuspended = false;
@@ -838,21 +841,18 @@ export const unsuspendProvider = async (req: Request, res: Response) => {
     await provider.save();
 
     // send unsuspension email
-    await sendServiceProviderUnsuspensionMail(
-      provider.email,
-      provider.name,
-    );
+    await sendServiceProviderUnsuspensionMail(provider.email, provider.name);
 
     res.status(200).json({
-        message: `Account un-suspended for ${provider.name}`,
-        success: true,
-        provider: {
-            id: provider._id,
-            name: provider.name,
-            email: provider.email
-        }
-    })
-    return
+      message: `Account un-suspended for ${provider.name}`,
+      success: true,
+      provider: {
+        id: provider._id,
+        name: provider.name,
+        email: provider.email,
+      },
+    });
+    return;
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -862,3 +862,110 @@ export const unsuspendProvider = async (req: Request, res: Response) => {
     return;
   }
 };
+
+// customer management
+
+export const getAllCustomers = async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const isActive = req.query.isActive;
+    const search = req.query.search as string;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+
+    // building filter object
+    const filter: any = {};
+
+    if (isActive !== undefined) {
+      filter.isActive = isActive === "true";
+    }
+
+    // search funtionality
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // building sort object
+    const validSortFields = ["name", "email", "createdAt"];
+    const sortObj: any = {};
+    if (validSortFields.includes(sortBy)) {
+      sortObj[sortBy] = order === "asc" ? 1 : -1;
+    } else {
+      sortObj.createdAt = -1;
+    }
+
+    const customers = await Customer.find(filter)
+      .select("-password -reactivationToken -reactivationExpires")
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit);
+
+    const totalCustomers = await Customer.countDocuments(filter);
+
+    res.status(200).json({
+      message: "customers retrieved successfuly !",
+      success: true,
+      data: customers,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCustomers / limit),
+        totalCustomers,
+        limit,
+        hasNext: page < Math.ceil(totalCustomers / limit),
+        hasPrev: page > 1,
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Customers",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getCustomerById = async (req: Request, res: Response) => {
+  try {
+    const {customerId} = req.params
+
+    if(!customerId) {
+        res.status(400).json({
+            message: "Customer Id not provided",
+            success: false
+        })
+        return
+    }
+
+    const customer = await Customer.findById(customerId)
+    if(!customer) {
+        res.status(404).json({
+            message: "Customer Doesn't Exist !",
+            success: false
+        })
+        return
+    }
+
+    res.status(200).json({
+        message: `Details for ${customer.name}: `,
+        success: true,
+        data: customer
+    })
+    return
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Customer BY ID",
+      success: false,
+    });
+    return;
+  }
+};
+
+// dashboard management
