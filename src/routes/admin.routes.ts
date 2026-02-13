@@ -6,6 +6,7 @@ import {
   getAllServiceProviders,
   getCategoryById,
   getCustomerById,
+  getDashboardStats,
   getProfile,
   getServiceProviderById,
   loginAdmin,
@@ -72,4 +73,6 @@ router.patch(
 router.get("/customers", authMiddleware(["admin"]), getAllCustomers);
 router.get("/customer/:customerId", authMiddleware(["admin"]), getCustomerById);
 
+// dashboard management routes
+router.get("/dashboard", authMiddleware(["admin"]), getDashboardStats);
 export default router;
