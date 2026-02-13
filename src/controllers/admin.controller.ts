@@ -933,31 +933,31 @@ export const getAllCustomers = async (req: Request, res: Response) => {
 
 export const getCustomerById = async (req: Request, res: Response) => {
   try {
-    const {customerId} = req.params
+    const { customerId } = req.params;
 
-    if(!customerId) {
-        res.status(400).json({
-            message: "Customer Id not provided",
-            success: false
-        })
-        return
+    if (!customerId) {
+      res.status(400).json({
+        message: "Customer Id not provided",
+        success: false,
+      });
+      return;
     }
 
-    const customer = await Customer.findById(customerId)
-    if(!customer) {
-        res.status(404).json({
-            message: "Customer Doesn't Exist !",
-            success: false
-        })
-        return
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      res.status(404).json({
+        message: "Customer Doesn't Exist !",
+        success: false,
+      });
+      return;
     }
 
     res.status(200).json({
-        message: `Details for ${customer.name}: `,
-        success: true,
-        data: customer
-    })
-    return
+      message: `Details for ${customer.name}: `,
+      success: true,
+      data: customer,
+    });
+    return;
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -969,3 +969,117 @@ export const getCustomerById = async (req: Request, res: Response) => {
 };
 
 // dashboard management
+
+export const getDashboardStats = async (req: Request, res: Response) => {
+  try {
+    // fetching current date range for todays stats
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date()
+    endOfDay.setHours(23,59,59,999)
+
+    // customer statistics
+    const totalCustomers = await Customer.countDocuments()
+    const activeCustomers = await Customer.countDocuments({
+        isActive: true
+    })
+    const newCustomersToday = await Customer.countDocuments({
+        createdAt: {
+            $gte: startOfDay,
+            $lte: endOfDay
+        }
+    })
+
+    // service provider statisticsd
+    const totalProviders = await ServiceProvider.countDocuments()
+    const activeProviders = await ServiceProvider.countDocuments({
+        isActive: true,
+        isSuspended: false
+    })
+    const suspendedProviders = await ServiceProvider.countDocuments({
+        isSuspended: true
+    })
+    const newProvidersToday = await ServiceProvider.countDocuments({
+        createdAt: {
+            $gte: startOfDay,
+            $lte: endOfDay
+        }
+    })
+
+    // service categories statistics
+    const totalServiceCategories = await ServiceCategories.countDocuments()
+    const activeServiceCategories = await ServiceCategories.countDocuments({
+        isActive: true
+    })
+
+    // service requests statistics
+    const totalRequests = await ServiceRequests.countDocuments()
+    const requestedCount = await ServiceRequests.countDocuments({
+        status: "requested"
+    })
+    const assignedCount = await ServiceRequests.countDocuments({
+        status: "assigned"
+    })
+    const inProgressCount = await ServiceRequests.countDocuments({
+        status: "in_progress"
+    })
+    const completedCount = await ServiceRequests.countDocuments({
+        status: "completed"
+    })
+    const cancelledCount = await ServiceRequests.countDocuments({
+        status: "cancelled"
+    })
+
+    // active requests (requested + assigned + in_progress)
+    const activeRequests = requestedCount + assignedCount + inProgressCount
+
+    // total new registrations today
+    const newRegistrationsToday = newCustomersToday + newProvidersToday
+
+    res.status(200).json({
+        message: "Dashboard Statistics: ",
+        success: true,
+        data: {
+            customers: {
+                total: totalCustomers,
+                active: activeCustomers,
+                inactive: totalCustomers - activeCustomers,
+                newToday: newCustomersToday
+            },
+            providers: {
+                total: totalProviders,
+                active: activeProviders,
+                suspended: suspendedProviders,
+                inactive: totalProviders - activeProviders,
+                newToday: newProvidersToday
+            },
+            categories: {
+                total: totalServiceCategories,
+                active: activeServiceCategories,
+                inactive: totalServiceCategories - activeServiceCategories
+            },
+            requests: {
+                total: totalRequests,
+                active: activeRequests,
+                requested: requestedCount,
+                assigned: assignedCount,
+                inProgress: inProgressCount,
+                completed: completedCount,
+                cancelled: cancelledCount
+            },
+            overview: {
+                newRegistrationsToday: newRegistrationsToday,
+                activeRequests: activeRequests
+            }
+        }
+    })
+    return
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Dashboard Stats",
+      success: false,
+    });
+    return;
+  }
+};
