@@ -2,6 +2,7 @@ import Customer from "#models/customer.model.js";
 import ServiceCategories from "#models/serviceCategories.model.js";
 import ServiceProvider from "#models/serviceProvider.model.js";
 import ServiceRequests from "#models/serviceRequests.model.js";
+import { handleCancellationNotifications, handleReschedulingNotifications } from "#services/notification.service.js";
 import { Request, Response } from "express";
 
 export const createServiceRequest = async (req: Request, res: Response) => {
@@ -482,6 +483,346 @@ export const getRequestById = async (req: Request, res: Response) => {
     console.error(error);
     res.status(500).json({
       message: "Error Fetching Service Request BY ID",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const cancelServiceRequest = async (req: Request, res: Response) => {
+  try {
+    const customerId = (req as any).user.id;
+    const { requestId } = req.params;
+    const { cancellationReason } = req.body;
+
+    if (!requestId) {
+      res.status(400).json({
+        message: "Request Id is required.",
+        success: false,
+      });
+      return;
+    }
+
+    if (!cancellationReason || cancellationReason.trim().length === 0) {
+      res.status(400).json({
+        message: "Please provide a reason for cancellation",
+        success: false,
+      });
+      return;
+    }
+
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      res.status(404).json({
+        message: "Customer Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    const serviceRequest = await ServiceRequests.findOne({
+      _id: requestId,
+      customerId: customerId,
+    }).populate("serviceProviderId", "name email");
+
+    if (!serviceRequest) {
+      res.status(404).json({
+        message: "Service Request not found",
+        success: false,
+      });
+      return;
+    }
+
+    const cancellableStatuses = ["requested", "assigned"];
+
+    if (!cancellableStatuses.includes(serviceRequest.status)) {
+      let message = "";
+      switch (serviceRequest.status) {
+        case "in_progress":
+          message = "Cannot cancel request. Service is already in progress.";
+          break;
+        case "completed":
+          message = "Cannot cancel request. Service is already completed.";
+          break;
+        case "cancelled":
+          message = "Request has already been cancelled.";
+          break;
+        default:
+          message = "Cannot cancel request in current status.";
+      }
+
+      res.status(400).json({
+        message,
+        success: false,
+        currentStatus: serviceRequest.status,
+        canCancel: false,
+      });
+      return;
+    }
+
+    serviceRequest.status = "cancelled";
+    serviceRequest.cancellationReason = cancellationReason;
+    serviceRequest.cancelledBy = "customer";
+    serviceRequest.cancelledAt = new Date();
+    serviceRequest.statusHistory.push({
+      status: "cancelled",
+      timeStamp: new Date(),
+      note: `Request cancelled by customer. Reason: ${cancellationReason}`,
+      updatedBy: "customer",
+    });
+
+    await serviceRequest.save();
+
+    // sending notification
+    const provider = serviceRequest.serviceProviderId as any;
+
+    const notificationResult = await handleCancellationNotifications(
+      customer._id as any,
+      customer.name,
+      provider?._id || null,
+      provider?.name || null,
+      serviceRequest._id as any,
+      serviceRequest.serviceTitle,
+      cancellationReason,
+    );
+
+    res.status(200).json({
+      message: "Service Request Cancelled.",
+      success: true,
+      data: {
+        request: {
+          _id: serviceRequest._id,
+          serviceTitle: serviceRequest.serviceTitle,
+          status: "cancelled",
+          cancelledAt: serviceRequest.cancelledAt,
+          cancellationReason: serviceRequest.cancellationReason,
+        },
+        provider: {
+          wasAssigned: !!serviceRequest.serviceProviderId,
+          providerName: (serviceRequest.serviceProviderId as any)?.name || null,
+          providerEmail:
+            (serviceRequest.serviceProviderId as any)?.email || null,
+          notified: !!provider, // if provider exists, they will be notified
+        },
+        refund: {
+          applicable: true,
+          message:
+            "Any payments made will be refunded within 5-7 business days.",
+          paymentStatus:
+            serviceRequest.paymentStatus === "paid"
+              ? "refund_initiated"
+              : "no_payment",
+        },
+        notifications: {
+          sent: notificationResult.success,
+          count: notificationResult.notificationsCreated,
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Service Request BY ID",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const rescheduleServiceRequest = async (req: Request, res: Response) => {
+  try {
+    const customerId = (req as any).user.id;
+    const { requestId } = req.params;
+    const { schedule } = req.body;
+
+    if (!requestId) {
+      res.status(400).json({
+        message: "Request Id is required",
+        success: false,
+      });
+      return;
+    }
+
+    if (!schedule) {
+      res.status(400).json({
+        message: "Please provider schedule details (date, timeSlot)",
+        success: false,
+      });
+      return;
+    }
+
+    if (!schedule.date || !schedule.timeSlot) {
+      res.status(400).json({
+        message: "Schedule must include date and timeSlot",
+        success: false,
+      });
+      return;
+    }
+
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      res.status(404).json({
+        message: "Customer Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    const serviceRequest = await ServiceRequests.findOne({
+      _id: requestId,
+      customerId: customerId,
+    });
+
+    if (!serviceRequest) {
+      res.status(404).json({
+        message: "Service Request Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    // check if request can be rescheduled
+    const reschedulableStatuses = ["requested", "assigned"];
+
+    if (!reschedulableStatuses.includes(serviceRequest.status)) {
+      let message = "";
+      switch (serviceRequest.status) {
+        case "in_progress":
+          message =
+            "Cannot reschedule request. Service is already in progress. Please contact the provider directly.";
+          break;
+        case "completed":
+          message =
+            "Cannot reschedule request. Service has already been completed.";
+          break;
+        case "cancelled":
+          message = "Cannot reschedule request. Service has been cancelled";
+          break;
+        default:
+          message = "Cannot reschedule request in current status";
+      }
+
+      res.status(400).json({
+        message,
+        success: false,
+        currentStatus: serviceRequest.status,
+        canReschedule: false,
+      });
+      return;
+    }
+
+    // validate new schedule
+    const newSchedule = new Date(schedule.date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (newSchedule < today) {
+      res.status(400).json({
+        message: "New Schedule date must be today or in the future",
+        success: false,
+      });
+      return;
+    }
+
+    // validate time slot
+    const validTimeSlots = ["morning", "afternoon", "evening"];
+    if (!validTimeSlots.includes(schedule.timeSlot)) {
+      res.status(400).json({
+        message: `Invalid timeSlot. Must be one of: ${validTimeSlots.join(", ")}`,
+        success: false,
+      });
+      return;
+    }
+
+    // check if same as current schedule
+    const currentScheduleDate = new Date(serviceRequest.schedule.date);
+    const isSameSchedule =
+      newSchedule.toDateString() === currentScheduleDate.toDateString() &&
+      schedule.timeSlot === serviceRequest.schedule.timeSlot;
+
+    if(isSameSchedule) {
+        res.status(400).json({
+            message: "New schedule is the same as current schedule. Please choose a different date or time slot.",
+            success: false,
+            currentSchedule: {
+              date: serviceRequest.schedule.date,
+              timeSlot: serviceRequest.schedule.timeSlot,
+            },
+        });
+        return;
+    }
+
+    // rescheduling the request
+    const oldSchedule = {
+        date: serviceRequest.schedule.date,
+        timeSlot: serviceRequest.schedule.timeSlot,
+        preferredTime: serviceRequest.schedule.preferredTime
+    }
+
+    serviceRequest.schedule = {
+        date: newSchedule,
+        timeSlot: schedule.timeSlot,
+        preferredTime: schedule.preferredTime || serviceRequest.schedule.preferredTime
+    }
+
+    serviceRequest.statusHistory.push({
+        status: serviceRequest.status,
+        timeStamp: new Date(),
+        note: `Request rescheduled from ${oldSchedule.timeSlot} (${new Date(oldSchedule.date).toLocaleDateString()}) to ${schedule.timeSlot} (${newSchedule.toLocaleDateString()})`,
+        updatedBy: "customer"
+    })
+
+    await serviceRequest.save()
+
+    // sending notification
+    const provider = serviceRequest.serviceProviderId as any
+
+    const notificationResult = await handleReschedulingNotifications(
+        customer._id as any,
+        customer.name,
+        provider?._id || null,
+        provider?.name || null,
+        serviceRequest._id as any,
+        serviceRequest.serviceTitle,
+    )
+
+    res.status(200).json({
+        message: "Service Request Rescheduled Successfully !",
+        success: true,
+        data: {
+            request: {
+                _id: serviceRequest._id,
+                serviceTitle: serviceRequest.serviceTitle,
+                status: serviceRequest.status
+            },
+            schedule: {
+                old: oldSchedule,
+                new: {
+                    date: newSchedule,
+                    timeSlot: schedule.timeSlot,
+                    preferredTime: schedule.preferredTime || oldSchedule.preferredTime
+                }
+            },
+            provider: {
+                isAssigned: !!serviceRequest.serviceProviderId,
+                willBeNotified: !!serviceRequest.serviceProviderId
+            },
+            timing: {
+                daysUntilService: Math.ceil((newSchedule.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)),
+                isUrgent: Math.ceil((newSchedule.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) <= 2
+            },
+            notifications: {
+                sent: notificationResult.success,
+                count: notificationResult.notificationsCreated
+            }
+        }
+    })
+    return
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Re-Scheduling Service Request",
       success: false,
     });
     return;

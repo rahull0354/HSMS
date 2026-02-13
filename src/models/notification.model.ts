@@ -30,6 +30,7 @@ const notificationSchema = new mongoose.Schema<INotification>({
             "request_started",
             "request_completed",
             "request_cancelled",
+            "request_rescheduled",
             "new_review",
             "payment_reminder"
         ],
