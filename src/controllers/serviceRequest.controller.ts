@@ -1050,31 +1050,34 @@ export const acceptRequest = async (req: Request, res: Response) => {
       return;
     }
 
-    if(serviceRequests.status !== "requested") {
-      let message = ""
+    if (serviceRequests.status !== "requested") {
+      let message = "";
       switch (serviceRequests.status) {
         case "cancelled":
-          message = "Cannot accept the request. It has been cancelled by the customer."
-          break
+          message =
+            "Cannot accept the request. It has been cancelled by the customer.";
+          break;
         case "assigned":
-          message = "This request has already been accepted by another provider."
-          break
+          message =
+            "This request has already been accepted by another provider.";
+          break;
         case "in_progress":
-          message = "This request is already in progress with another provider."
-          break
+          message =
+            "This request is already in progress with another provider.";
+          break;
         case "completed":
-          message = "This request has already been completed."
-          break
+          message = "This request has already been completed.";
+          break;
         default:
-          message = `Cannot accept the request in current status: ${serviceRequests.status}`
+          message = `Cannot accept the request in current status: ${serviceRequests.status}`;
       }
 
       res.status(400).json({
         message,
         success: false,
-        currentStatus: serviceRequests.status
-      })
-      return
+        currentStatus: serviceRequests.status,
+      });
+      return;
     }
 
     // update the request
@@ -1097,8 +1100,8 @@ export const acceptRequest = async (req: Request, res: Response) => {
       provider._id as any,
       provider.name,
       requestId as any,
-      serviceRequests.serviceTitle
-    )
+      serviceRequests.serviceTitle,
+    );
 
     res.status(200).json({
       message: "Service Request Accepted Successfully",
@@ -1123,8 +1126,8 @@ export const acceptRequest = async (req: Request, res: Response) => {
         },
         notifications: {
           sent: notificationResult.success,
-          count: notificationResult.notificationsCreated
-        }
+          count: notificationResult.notificationsCreated,
+        },
       },
     });
     return;
@@ -1138,3 +1141,388 @@ export const acceptRequest = async (req: Request, res: Response) => {
   }
 };
 
+export const getMyAssignedRequests = async (req: Request, res: Response) => {
+  try {
+    const providerId = (req as any).user.id;
+
+    const status = req.query.status as string;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+
+    const provider = await ServiceProvider.findById(providerId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Provider Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    // build filter object
+    const filter: any = {
+      serviceProviderId: providerId,
+    };
+
+    // filter by status if provided
+    if (status) {
+      const validStatuses = [
+        "assigned",
+        "in_progress",
+        "completed",
+        "cancelled",
+      ];
+
+      if (!validStatuses.includes(status)) {
+        res.status(400).json({
+          message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+          success: false,
+        });
+        return;
+      }
+      filter.status = status;
+    }
+
+    // build sort object
+    const validSortFields = [
+      "createdAt",
+      "schedule.date",
+      "status",
+      "estimatedPrice",
+      "updatedAt",
+    ];
+    const sortObj: any = {};
+
+    if (validSortFields.includes(sortBy)) {
+      sortObj[sortBy] = order === "asc" ? 1 : -1;
+    } else {
+      sortObj.createdAt = -1;
+    }
+
+    // fetching requests
+    const requests = await ServiceRequests.find(filter)
+      .populate("customerId", "name email phone profilePicture")
+      .populate("serviceCategoryId", "name slug icon priceRange")
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit);
+
+    // count total requests
+    const totalRequests = await ServiceRequests.countDocuments(filter);
+
+    // calculate statistics
+    const statusCounts = await ServiceRequests.aggregate([
+      {
+        $match: { serviceProviderId: provider._id },
+      },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const stats = {
+      total: totalRequests,
+      assigned: 0,
+      inProgress: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+
+    statusCounts.forEach((item: any) => {
+      if (item._id === "assigned") stats.assigned = item.count;
+      if (item._id === "in_progress") stats.inProgress = item.count;
+      if (item._id === "completed") stats.completed = item.count;
+      if (item._id === "cancelled") stats.cancelled = item.count;
+    });
+
+    res.status(200).json({
+      message: "Requests Retrieved: ",
+      success: true,
+      data: requests,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalRequests / limit),
+        totalRequests,
+        limit,
+        hasNext: page < Math.ceil(totalRequests / limit),
+        hasPrev: page > 1,
+      },
+      statistics: stats,
+      filters: {
+        status: status || "all",
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Assigned Service Request",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const startService = async (req: Request, res: Response) => {
+  try {
+    const providerId = (req as any).user.id;
+    const { requestId } = req.params;
+
+    if (!requestId) {
+      res.status(400).json({
+        message: "Request Id is required.",
+        success: false,
+      });
+      return;
+    }
+
+    const provider = await ServiceProvider.findById(providerId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Provider Not Found.",
+        success: false,
+      });
+      return;
+    }
+
+    if (!provider.isActive) {
+      res.status(403).json({
+        message:
+          "Your account is deactivated. Please reactivate to start services.",
+        success: false,
+      });
+      return;
+    }
+
+    if (provider.isSuspended === true) {
+      res.status(403).json({
+        message: `Your account is suspended. Reason: ${provider.suspensionReason || "Contact support for details."}`,
+        success: false,
+      });
+      return;
+    }
+
+    // find the service request
+    const serviceRequest = await ServiceRequests.findOne({
+      _id: requestId,
+    }).populate("customerId", "name email");
+
+    if (!serviceRequest) {
+      res.status(404).json({
+        message: "Service Request Not Found!",
+        success: false,
+      });
+      return;
+    }
+
+    if (!serviceRequest.serviceProviderId) {
+      res.status(400).json({
+        message: "This request is not assigned to any provider",
+        success: false,
+      });
+      return;
+    }
+
+    // only assigned status request can start
+    if (serviceRequest.status !== "assigned") {
+      let message = "";
+      switch (serviceRequest.status) {
+        case "requested":
+          message = "Cannot start request. Please accept the request first.";
+          break;
+        case "in_progress":
+          message = "Service is already in progress.";
+          break;
+        case "completed":
+          message = "service has already been completed.";
+          break;
+        case "cancelled":
+          message = "Cannot start request. Service has been cancelled.";
+          break;
+        default:
+          message = `Cannot start request in current status: ${serviceRequest.status}`;
+      }
+
+      res.status(400).json({
+        message,
+        success: false,
+        currentStatus: serviceRequest.status,
+      });
+      return;
+    }
+
+    // updating the request
+    serviceRequest.status = "in_progress";
+    serviceRequest.statusHistory.push({
+      status: "in_progress",
+      timeStamp: new Date(),
+      note: `Service started by ${provider.name}`,
+      updatedBy: "service_provider",
+    });
+
+    await serviceRequest.save();
+
+    res.status(200).json({
+      message: "Service Started Successfully",
+      success: true,
+      data: {
+        request: {
+          _id: serviceRequest._id,
+          serviceTitle: serviceRequest.serviceTitle,
+          status: "in_progress",
+          schedule: serviceRequest.schedule,
+        },
+        provider: {
+          name: provider.name,
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Starting Service",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const completeService = async (req: Request, res: Response) => {
+  try {
+    const providerId = (req as any).user.id;
+    const { requestId } = req.params;
+    const { afterImages, finalPrice } = req.body;
+
+    if (!requestId) {
+      res.status(400).json({
+        message: "Request Id Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    const provider = await ServiceProvider.findById(providerId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Provider Id not Found",
+        success: false,
+      });
+      return;
+    }
+
+    if (!provider.isActive) {
+      res.status(403).json({
+        message:
+          "Your Account is deactivated. Reactivate to completed services.",
+        success: false,
+      });
+      return;
+    }
+
+    if (provider.isSuspended) {
+      res.status(403).json({
+        message: `Your account is suspended. Reason: ${provider.suspensionReason || "Contact support for details."}`,
+        success: false,
+      });
+      return;
+    }
+
+    // find the service request
+    const serviceRequest = await ServiceRequests.findOne({
+      _id: requestId,
+    }).populate("customerId", "name email");
+
+    if (!serviceRequest) {
+      res.status(404).json({
+        message: "Service Request not found",
+        success: false,
+      });
+      return;
+    }
+
+    if (!serviceRequest.serviceProviderId) {
+      res.status(400).json({
+        message: "This request is not assigned to any provider",
+        success: false,
+      });
+      return;
+    }
+
+    if (serviceRequest.status !== "in_progress") {
+      let message = "";
+      switch (serviceRequest.status) {
+        case "requested":
+          message = "Cannot start request. Please accept the request first.";
+          break;
+        case "in_progress":
+          message = "Service is already in progress.";
+          break;
+        case "completed":
+          message = "service has already been completed.";
+          break;
+        case "cancelled":
+          message = "Cannot start request. Service has been cancelled.";
+          break;
+        default:
+          message = `Cannot start request in current status: ${serviceRequest.status}`;
+      }
+
+      res.status(400).json({
+        message,
+        success: false,
+        currentStatus: serviceRequest.status,
+      });
+      return;
+    }
+
+    serviceRequest.status = "completed";
+    serviceRequest.afterImages = afterImages || [];
+    serviceRequest.finalPrice = finalPrice || serviceRequest.estimatedPrice;
+    serviceRequest.completedAt = new Date();
+    serviceRequest.statusHistory.push({
+      status: "completed",
+      timeStamp: new Date(),
+      note: `Service completed by ${provider.name}. Final price: ${serviceRequest.finalPrice}`,
+      updatedBy: "service_provider",
+    });
+
+    await serviceRequest.save();
+
+    res.status(200).json({
+      message: "Service Completed Successfully.",
+      success: true,
+      data: {
+        request: {
+          _id: serviceRequest._id,
+          serviceTitle: serviceRequest.serviceTitle,
+          status: "completed",
+          finalPrice: serviceRequest.finalPrice,
+          estimatedPrice: serviceRequest.estimatedPrice,
+          completedAt: serviceRequest.completedAt,
+          afterImages: serviceRequest.afterImages,
+        },
+        provider: {
+          name: provider.name,
+        },
+        pricing: {
+          estimated: serviceRequest.estimatedPrice,
+          final: serviceRequest.finalPrice,
+          difference: serviceRequest.finalPrice - serviceRequest.estimatedPrice,
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Completing Service",
+      success: false,
+    });
+    return;
+  }
+};
