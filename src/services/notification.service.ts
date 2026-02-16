@@ -223,6 +223,7 @@ export const notifyCustomerRequestAccepted = async (
     }
 }
 
+// handler for sending request accepted notification
 export const handleRequestAcceptedNotifications = async (
     customerId: string,
     customerName: string,
@@ -249,6 +250,66 @@ export const handleRequestAcceptedNotifications = async (
         }
     } catch (error) {
         console.error("Error Creating Accept Request Notification: ", error);
+        throw error
+    }
+}
+
+// sending notification if a provider has responded to a customer's review
+
+export const notifyCustomerAboutReviewReply = async (
+    customerId: string,
+    customerName: string,
+    providerName: string,
+    reviewId: string,
+    responseComment: string
+) => {
+    try {
+        const notification = new Notification({
+            recipient: customerId,
+            recipientType: "customer",
+            type: "new_review",
+            title: "Provider Responded to Your Review",
+            message: `${providerName} has responded to your review: "${responseComment.substring(0, 100)}${responseComment.length > 100 ? "..." : ""}"`,
+            reviewId: reviewId,
+            isRead: false
+        })
+
+        await notification.save()
+        console.log(`Notification sent to provider ${customerId}`);
+        return notification
+    } catch (error) {
+        console.error("Error sending notification to customer: ", error);
+        throw error
+    }
+}
+
+export const handleReviewResponseNotification = async (
+    customerId: string,
+    customerName: string,
+    providerId: string,
+    providerName: string,
+    reviewId: string,
+    responseComment: string
+) => {
+    try {
+        const notification = []
+
+        const customerNotification = await notifyCustomerAboutReviewReply(
+            customerId,
+            customerName,
+            providerName,
+            reviewId,
+            responseComment
+        )
+        notification.push(customerNotification)
+
+        return {
+            success: true,
+            notificationsCreated: notification.length,
+            notification
+        }
+    } catch (error) {
+        console.error("error creating review response notification: ", error);
         throw error
     }
 }

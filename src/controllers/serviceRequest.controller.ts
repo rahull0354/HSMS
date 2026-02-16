@@ -1493,6 +1493,10 @@ export const completeService = async (req: Request, res: Response) => {
 
     await serviceRequest.save();
 
+    // Incrementing provider's totalJobsCompleted
+    provider.totalJobsCompleted = (provider.totalJobsCompleted as number) + 1;
+    await provider.save();
+
     res.status(200).json({
       message: "Service Completed Successfully.",
       success: true,
