@@ -1,11 +1,14 @@
 import {
   acceptRequest,
   cancelServiceRequest,
+  completeService,
   createServiceRequest,
   getAvailableRequests,
+  getMyAssignedRequests,
   getMyServiceRequests,
   getRequestById,
   rescheduleServiceRequest,
+  startService,
 } from "#controllers/serviceRequest.controller.js";
 import { authMiddleware } from "#middlewares/auth.middleware.js";
 import express from "express";
@@ -22,6 +25,21 @@ router.get(
   "/requests/available-requests",
   authMiddleware(["serviceProvider"]),
   getAvailableRequests,
+);
+router.get(
+  "/requests/my-assigned-requests",
+  authMiddleware(["serviceProvider"]),
+  getMyAssignedRequests,
+);
+router.patch(
+  "/requests/start/:requestId",
+  authMiddleware(["serviceProvider"]),
+  startService,
+);
+router.patch(
+  "/requests/complete/:requestId",
+  authMiddleware(["serviceProvider"]),
+  completeService,
 );
 router.post(
   "/requests/accept/:requestId",
