@@ -18,6 +18,7 @@ interface IReviews extends Document {
   };
   isVisible: boolean;
   isFlagged: boolean;
+  flagReason?: string | ""
 }
 
 const reviewsSchema = new mongoose.Schema<IReviews>({
@@ -77,6 +78,9 @@ const reviewsSchema = new mongoose.Schema<IReviews>({
   isFlagged: {
     type: Boolean,
     default: false
+  },
+  flagReason: {
+    type: String
   }
 }, {timestamps: true});
 
