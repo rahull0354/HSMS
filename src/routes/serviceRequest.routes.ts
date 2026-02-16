@@ -1,6 +1,8 @@
 import {
+  acceptRequest,
   cancelServiceRequest,
   createServiceRequest,
+  getAvailableRequests,
   getMyServiceRequests,
   getRequestById,
   rescheduleServiceRequest,
@@ -17,9 +19,14 @@ router.get(
   getMyServiceRequests,
 );
 router.get(
-  "/requests/:requestId",
-  authMiddleware(["customer"]),
-  getRequestById,
+  "/requests/available-requests",
+  authMiddleware(["serviceProvider"]),
+  getAvailableRequests,
+);
+router.post(
+  "/requests/accept/:requestId",
+  authMiddleware(["serviceProvider"]),
+  acceptRequest,
 );
 router.patch(
   "/requests/cancel/:requestId",
@@ -30,6 +37,12 @@ router.patch(
   "/requests/reschedule/:requestId",
   authMiddleware(["customer"]),
   rescheduleServiceRequest,
+);
+
+router.get(
+  "/requests/:requestId",
+  authMiddleware(["customer"]),
+  getRequestById,
 );
 
 export default router;
