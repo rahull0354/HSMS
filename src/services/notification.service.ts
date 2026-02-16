@@ -194,3 +194,61 @@ export const handleReschedulingNotifications = async (
         throw error
     }
 }
+
+// notify customer that service request is accepted
+
+export const notifyCustomerRequestAccepted = async (
+    customerId: string,
+    providerName: string,
+    requestId: string,
+    requestTitle: string
+) => {
+    try {
+        const notification = new Notification({
+            recipient: customerId,
+            recipientType: 'customer',
+            type: 'request_assigned',
+            title: "Service Request Accepted",
+            message: `Great news! Your service request "${requestTitle}" has been assigned to ${providerName}. They will contact you shortly.`,
+            requestId: requestId,
+            isRead: false
+        })
+
+        await notification.save()
+        console.log(`Notification sent to customer ${customerId}`)
+        return notification
+    } catch (error) {
+        console.error("Error Creating Request Accepted Notification: ", error);
+        throw error
+    }
+}
+
+export const handleRequestAcceptedNotifications = async (
+    customerId: string,
+    customerName: string,
+    providerId: string,
+    providerName: string,
+    requestId: string,
+    requestTitle: string
+) => {
+    try {
+        const notifications = []
+
+        const customerNotification = await notifyCustomerRequestAccepted(
+            customerId,
+            providerName,
+            requestId,
+            requestTitle
+        )
+        notifications.push(customerNotification)
+
+        return {
+            success: true,
+            notificationsCreated: notifications.length,
+            notifications
+        }
+    } catch (error) {
+        console.error("Error Creating Accept Request Notification: ", error);
+        throw error
+    }
+}

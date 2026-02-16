@@ -1,8 +1,13 @@
 import Customer from "#models/customer.model.js";
+import Notification from "#models/notification.model.js";
 import ServiceCategories from "#models/serviceCategories.model.js";
 import ServiceProvider from "#models/serviceProvider.model.js";
 import ServiceRequests from "#models/serviceRequests.model.js";
-import { handleCancellationNotifications, handleReschedulingNotifications } from "#services/notification.service.js";
+import {
+  handleCancellationNotifications,
+  handleRequestAcceptedNotifications,
+  handleReschedulingNotifications,
+} from "#services/notification.service.js";
 import { Request, Response } from "express";
 
 export const createServiceRequest = async (req: Request, res: Response) => {
@@ -713,11 +718,11 @@ export const rescheduleServiceRequest = async (req: Request, res: Response) => {
     }
 
     // validate new schedule
-    const newSchedule = new Date(schedule.date);
+    const newScheduleDate = new Date(schedule.date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    if (newSchedule < today) {
+    if (newScheduleDate < today) {
       res.status(400).json({
         message: "New Schedule date must be today or in the future",
         success: false,
@@ -738,87 +743,94 @@ export const rescheduleServiceRequest = async (req: Request, res: Response) => {
     // check if same as current schedule
     const currentScheduleDate = new Date(serviceRequest.schedule.date);
     const isSameSchedule =
-      newSchedule.toDateString() === currentScheduleDate.toDateString() &&
+      newScheduleDate.toDateString() === currentScheduleDate.toDateString() &&
       schedule.timeSlot === serviceRequest.schedule.timeSlot;
 
-    if(isSameSchedule) {
-        res.status(400).json({
-            message: "New schedule is the same as current schedule. Please choose a different date or time slot.",
-            success: false,
-            currentSchedule: {
-              date: serviceRequest.schedule.date,
-              timeSlot: serviceRequest.schedule.timeSlot,
-            },
-        });
-        return;
+    if (isSameSchedule) {
+      res.status(400).json({
+        message:
+          "New schedule is the same as current schedule. Please choose a different date or time slot.",
+        success: false,
+        currentSchedule: {
+          date: serviceRequest.schedule.date,
+          timeSlot: serviceRequest.schedule.timeSlot,
+        },
+      });
+      return;
     }
 
     // rescheduling the request
     const oldSchedule = {
-        date: serviceRequest.schedule.date,
-        timeSlot: serviceRequest.schedule.timeSlot,
-        preferredTime: serviceRequest.schedule.preferredTime
-    }
+      date: serviceRequest.schedule.date,
+      timeSlot: serviceRequest.schedule.timeSlot,
+      preferredTime: serviceRequest.schedule.preferredTime,
+    };
 
     serviceRequest.schedule = {
-        date: newSchedule,
-        timeSlot: schedule.timeSlot,
-        preferredTime: schedule.preferredTime || serviceRequest.schedule.preferredTime
-    }
+      date: schedule,
+      timeSlot: schedule.timeSlot,
+      preferredTime:
+        schedule.preferredTime || serviceRequest.schedule.preferredTime,
+    };
 
     serviceRequest.statusHistory.push({
-        status: serviceRequest.status,
-        timeStamp: new Date(),
-        note: `Request rescheduled from ${oldSchedule.timeSlot} (${new Date(oldSchedule.date).toLocaleDateString()}) to ${schedule.timeSlot} (${newSchedule.toLocaleDateString()})`,
-        updatedBy: "customer"
-    })
+      status: serviceRequest.status,
+      timeStamp: new Date(),
+      note: `Request rescheduled from ${oldSchedule.timeSlot} (${new Date(oldSchedule.date).toLocaleDateString()}) to ${schedule.timeSlot} (${schedule.toLocaleDateString()})`,
+      updatedBy: "customer",
+    });
 
-    await serviceRequest.save()
+    await serviceRequest.save();
 
     // sending notification
-    const provider = serviceRequest.serviceProviderId as any
+    const provider = serviceRequest.serviceProviderId as any;
 
     const notificationResult = await handleReschedulingNotifications(
-        customer._id as any,
-        customer.name,
-        provider?._id || null,
-        provider?.name || null,
-        serviceRequest._id as any,
-        serviceRequest.serviceTitle,
-    )
+      customer._id as any,
+      customer.name,
+      provider?._id || null,
+      provider?.name || null,
+      serviceRequest._id as any,
+      serviceRequest.serviceTitle,
+    );
 
     res.status(200).json({
-        message: "Service Request Rescheduled Successfully !",
-        success: true,
-        data: {
-            request: {
-                _id: serviceRequest._id,
-                serviceTitle: serviceRequest.serviceTitle,
-                status: serviceRequest.status
-            },
-            schedule: {
-                old: oldSchedule,
-                new: {
-                    date: newSchedule,
-                    timeSlot: schedule.timeSlot,
-                    preferredTime: schedule.preferredTime || oldSchedule.preferredTime
-                }
-            },
-            provider: {
-                isAssigned: !!serviceRequest.serviceProviderId,
-                willBeNotified: !!serviceRequest.serviceProviderId
-            },
-            timing: {
-                daysUntilService: Math.ceil((newSchedule.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)),
-                isUrgent: Math.ceil((newSchedule.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) <= 2
-            },
-            notifications: {
-                sent: notificationResult.success,
-                count: notificationResult.notificationsCreated
-            }
-        }
-    })
-    return
+      message: "Service Request Rescheduled Successfully !",
+      success: true,
+      data: {
+        request: {
+          _id: serviceRequest._id,
+          serviceTitle: serviceRequest.serviceTitle,
+          status: serviceRequest.status,
+        },
+        schedule: {
+          old: oldSchedule,
+          new: {
+            date: schedule,
+            timeSlot: schedule.timeSlot,
+            preferredTime: schedule.preferredTime || oldSchedule.preferredTime,
+          },
+        },
+        provider: {
+          isAssigned: !!serviceRequest.serviceProviderId,
+          willBeNotified: !!serviceRequest.serviceProviderId,
+        },
+        timing: {
+          daysUntilService: Math.ceil(
+            (schedule.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+          ),
+          isUrgent:
+            Math.ceil(
+              (schedule.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+            ) <= 2,
+        },
+        notifications: {
+          sent: notificationResult.success,
+          count: notificationResult.notificationsCreated,
+        },
+      },
+    });
+    return;
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -828,3 +840,301 @@ export const rescheduleServiceRequest = async (req: Request, res: Response) => {
     return;
   }
 };
+
+// service provider functions
+
+export const getAvailableRequests = async (req: Request, res: Response) => {
+  try {
+    const providerId = (req as any).user.id;
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+    const city = (req.query.city as string)?.toLowerCase();
+    const skillCategory = req.query.skillCategory as string;
+
+    const provider = await ServiceProvider.findById(providerId);
+    if (!provider) {
+      res.status(400).json({
+        message: "Service Provider Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    if (!provider.isActive) {
+      res.status(403).json({
+        message:
+          "Your account is deactivated. Please reactivate to view available requests.",
+        success: false,
+      });
+      return;
+    }
+
+    if (provider.isSuspended === true) {
+      res.status(403).json({
+        message: `Your account is suspended. Reason: ${provider.suspensionReason || "Contact support for details."}`,
+        success: false,
+      });
+      return;
+    }
+
+    const matchingCategories = await ServiceCategories.find({
+      isActive: true,
+      requiredSkills: {
+        $in: provider.skills || [],
+      },
+    }).select("_id requiredSkills name");
+
+    const matchingCategoryIds = matchingCategories.map((cat) => cat._id);
+
+    if (matchingCategoryIds.length === 0) {
+      res.status(400).json({
+        message: "No available requests found",
+        success: false,
+      });
+      return;
+    }
+
+    // build filter object
+    const filter: any = {
+      status: "requested",
+      serviceProviderId: { $exists: false },
+      serviceCategoryId: { $in: matchingCategoryIds },
+    };
+
+    // filter by provider's service area
+    const providerCities = provider.serviceArea?.cities || [];
+    const providerAreas = provider.serviceArea?.areas || [];
+
+    if (providerCities.length > 0 || providerAreas.length > 0) {
+      filter.$or = [
+        { "serviceAddress.city": { $in: providerCities } },
+        { "serviceAddress.city": { $in: providerAreas } },
+      ];
+    }
+
+    // filter by city if provided
+    if (city) {
+      filter["serviceAddress.city"] = city;
+    }
+
+    // filter by skill category if provided
+    if (skillCategory) {
+      const category = await ServiceCategories.findOne({
+        slug: skillCategory,
+        isActive: true,
+      });
+      if (category) {
+        filter.serviceCategoryId = category._id;
+      } else {
+        res.status(400).json({
+          message: "Invalid Skill Category",
+          success: false,
+        });
+        return;
+      }
+    }
+
+    // build sort object
+    const validSortFields = [
+      "createdAt",
+      "schedule.date",
+      "estimatedPrice",
+      "serviceTitle",
+    ];
+    const sortObj: any = {};
+
+    if (validSortFields.includes(sortBy)) {
+      sortObj[sortBy] = order === "asc" ? 1 : -1;
+    } else {
+      sortObj.createdAt = -1; // default sort
+    }
+
+    const requests = await ServiceRequests.find(filter)
+      .populate("customerId", "name email phone")
+      .populate("serviceCategoryId", "name slug icon requiredSkills")
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limit);
+
+    const totalRequests = await ServiceRequests.countDocuments(filter);
+
+    res.status(200).json({
+      message: "Available service requests retrieved",
+      success: true,
+      data: requests,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalRequests / limit),
+        totalRequests,
+        limit,
+        hasNext: page < Math.ceil(totalRequests / limit),
+        hasPrev: page > 1,
+      },
+      filters: {
+        city: city || "all",
+        skillCategory: skillCategory || "all",
+        providerSkills: provider.skills || [],
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Available Service Request",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const acceptRequest = async (req: Request, res: Response) => {
+  try {
+    const providerId = (req as any).user.id;
+    const { requestId } = req.params;
+
+    if (!requestId) {
+      res.status(400).json({
+        message: "Request Id is required",
+        success: false,
+      });
+    }
+
+    const provider = await ServiceProvider.findById(providerId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    if (!provider.isActive) {
+      res.status(403).json({
+        message:
+          "Your account is deactivated. Please reactivate to accept requests.",
+        success: false,
+      });
+      return;
+    }
+
+    if (provider.isSuspended) {
+      res.status(403).json({
+        message: `Your account is suspended. Reason: ${provider.suspensionReason || "Contact support for details."}`,
+        success: false,
+      });
+      return;
+    }
+
+    const serviceRequests = await ServiceRequests.findOne({
+      _id: requestId,
+    }).populate("customerId", "name email");
+
+    if (!serviceRequests) {
+      res.status(404).json({
+        message: "Service Request Not Found.",
+        success: false,
+      });
+      return;
+    }
+
+    // check if request is already assigned
+    if (serviceRequests.serviceProviderId) {
+      res.status(400).json({
+        message: "This request has already been accepted by another provider",
+        success: false,
+      });
+      return;
+    }
+
+    if(serviceRequests.status !== "requested") {
+      let message = ""
+      switch (serviceRequests.status) {
+        case "cancelled":
+          message = "Cannot accept the request. It has been cancelled by the customer."
+          break
+        case "assigned":
+          message = "This request has already been accepted by another provider."
+          break
+        case "in_progress":
+          message = "This request is already in progress with another provider."
+          break
+        case "completed":
+          message = "This request has already been completed."
+          break
+        default:
+          message = `Cannot accept the request in current status: ${serviceRequests.status}`
+      }
+
+      res.status(400).json({
+        message,
+        success: false,
+        currentStatus: serviceRequests.status
+      })
+      return
+    }
+
+    // update the request
+    serviceRequests.serviceProviderId = providerId;
+    serviceRequests.status = "assigned";
+    serviceRequests.statusHistory.push({
+      status: "assigned",
+      timeStamp: new Date(),
+      note: `Request accepted by service provider ${provider.name}`,
+      updatedBy: "service_provider",
+    });
+
+    await serviceRequests.save();
+
+    const customer = serviceRequests.customerId as any;
+
+    const notificationResult = await handleRequestAcceptedNotifications(
+      customer._id as any,
+      customer.name,
+      provider._id as any,
+      provider.name,
+      requestId as any,
+      serviceRequests.serviceTitle
+    )
+
+    res.status(200).json({
+      message: "Service Request Accepted Successfully",
+      success: true,
+      data: {
+        request: {
+          _id: serviceRequests._id,
+          serviceTitle: serviceRequests.serviceTitle,
+          status: "assigned",
+          schedule: serviceRequests.schedule,
+          serviceAddress: serviceRequests.serviceAddress,
+        },
+        provider: {
+          name: provider.name,
+          email: provider.email,
+          phone: provider.phone,
+        },
+        cusotmer: {
+          name: customer.name,
+          email: customer.email,
+          notified: true,
+        },
+        notifications: {
+          sent: notificationResult.success,
+          count: notificationResult.notificationsCreated
+        }
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Accepting Service Request",
+      success: false,
+    });
+    return;
+  }
+};
+
