@@ -6,6 +6,7 @@ import customerRoutes from "#routes/customer.routes.js"
 import serviceProviderRoutes from "#routes/serviceProvider.routes.js"
 import adminRoutes from "#routes/admin.routes.js"
 import serviceRequestRoutes from "#routes/serviceRequest.routes.js"
+import reviewRoutes from "#routes/review.route.js"
 
 const app = express()
 const port = process.env.port ?? "9000"
@@ -17,6 +18,7 @@ app.use("/customer", customerRoutes)
 app.use("/serviceProvider", serviceProviderRoutes)
 app.use("/admin", adminRoutes)
 app.use("/serviceRequest", serviceRequestRoutes)
+app.use("/reviews", reviewRoutes)
 
 app.listen(port, () => {
     connectDB()
