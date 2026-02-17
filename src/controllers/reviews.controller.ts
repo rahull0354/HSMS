@@ -1045,3 +1045,122 @@ export const toggleReviewVisibility = async (req: Request, res: Response) => {
     return;
   }
 };
+
+export const getAllReviews = async (req: Request, res: Response) => {
+  try {
+    const adminId = (req as any).user.id
+
+    const page = parseInt(req.query.page as string) || 1
+    const limit = parseInt(req.query.limit as string) || 10
+    const skip = (page - 1) * limit
+    const sortBy = (req.query.sortBy as string) || "createdAt"
+    const order = (req.query.order as string) || "desc"
+    const rating = req.query.rating as string
+    const isFlagged = req.query.isFlagged
+    const isVisible = req.query.isVisible
+
+    // build filter object
+    const filter: any = {}
+
+    // filter by visibility status 
+    if(isVisible !== undefined) {
+      filter.isVisible = isVisible === "true"
+    }
+
+    // filter by flagged status
+    if(isFlagged !== undefined) {
+      filter.isFlagged = isFlagged === "true"
+    }
+
+    if (rating) {
+      const ratingNum = parseInt(rating)
+      if(ratingNum < 1 || ratingNum > 5){
+        res.status(400).json({
+          message: "Rating should be between 1 & 5",
+          success: false
+        })
+        return
+      }
+      filter.rating = ratingNum
+    }
+
+    const validSortFields = ['createdAt', 'rating', 'updatedAt', 'isFlagged']
+    const sortObj: any = {}
+
+    if(validSortFields.includes(sortBy)) {
+      sortObj[sortBy] = order === "asc" ? 1 : -1
+    } else {
+      sortObj.createdAt = -1 // default sort
+    }
+
+    const reviews = await Reviews.find(filter)
+    .populate("customerId", "name email profilePicture")
+    .populate("serviceProviderId", "name email averageRating")
+    .populate("serviceRequestId", "serviceTitle serviceAddress status")
+    .sort(sortObj)
+    .skip(skip)
+    .limit(limit)
+
+    const totalReviews = await Reviews.countDocuments(filter)
+
+    // overall statistics calculations
+    const ratingDistribution = await Reviews.aggregate([
+      {
+        $group: {
+          _id: "$rating",
+          count: {$sum: 1}
+        }
+      }
+    ])
+
+    const distribution = {
+      5: 0,
+      4: 0,
+      3: 0,
+      2: 0,
+      1: 0,
+    }
+
+    ratingDistribution.forEach((item: any) => {
+      distribution[item._id as keyof typeof distribution] = item.count
+    })
+
+    const totalFlaggedReviews = await Reviews.countDocuments({
+      isFlagged: true
+    })
+
+    const totalHiddenReviews = await Reviews.countDocuments({
+      isVisible: false
+    })
+
+    res.status(200).json({
+      message: "All Reviews Retrieved Successfully",
+      success: true,
+      data: {
+        reviews: reviews,
+        statistics: {
+          totalReviews: totalReviews,
+          flaggedReviews: totalFlaggedReviews,
+          hiddenReviews: totalHiddenReviews,
+          ratingDistribution: distribution
+        },
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalReviews / limit),
+          totalReviews,
+          limit,
+          hasNext: page < Math.ceil(totalReviews / limit),
+          hasPrev: page > 1
+        }
+      }
+    })
+    return
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching all Reviews",
+      success: false,
+    });
+    return;    
+  }
+}
