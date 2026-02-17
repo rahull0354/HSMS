@@ -2,6 +2,7 @@ import {
   createReview,
   deleteReview,
   flagCustomerReview,
+  getAllReviews,
   getMyReviews,
   getProviderReviews,
   getReviewsAboutMe,
@@ -57,6 +58,7 @@ router.patch(
   authMiddleware(["admin"]),
   toggleReviewVisibility,
 );
+router.get("/admin/all-reviews", authMiddleware(["admin"]), getAllReviews);
 
 // Public routes
 router.get("/provider/:providerId", getProviderReviews);
