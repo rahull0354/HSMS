@@ -5,6 +5,7 @@ import {
   getAllReviews,
   getMyReviews,
   getProviderReviews,
+  getReviewById,
   getReviewsAboutMe,
   respondToReview,
   toggleReviewVisibility,
@@ -62,5 +63,6 @@ router.get("/admin/all-reviews", authMiddleware(["admin"]), getAllReviews);
 
 // Public routes
 router.get("/provider/:providerId", getProviderReviews);
+router.get("/general/:reviewId", getReviewById);
 
 export default router;
