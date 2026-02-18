@@ -18,7 +18,9 @@ interface IReviews extends Document {
   };
   isVisible: boolean;
   isFlagged: boolean;
-  flagReason?: string | ""
+  flagReason?: string | "";
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const reviewsSchema = new mongoose.Schema<IReviews>({

@@ -18,6 +18,8 @@ interface ICustomer {
   deactivatedAt?: Date;
   reactivationToken?: string;
   reactivationExpires?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const customerSchema = new Schema<ICustomer>(

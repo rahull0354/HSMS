@@ -50,6 +50,8 @@ interface IServiceRequests extends Document {
   };
   parentRequestId?: mongoose.Schema.Types.ObjectId;
   completedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const serviceRequestsSchema = new mongoose.Schema<IServiceRequests>(
