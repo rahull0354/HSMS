@@ -17,6 +17,8 @@ interface IServiceCategories extends Document {
   }>;
   requiredSkills: string[];
   isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const serviceCategoriesSchema = new mongoose.Schema<IServiceCategories>(

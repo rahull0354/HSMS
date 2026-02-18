@@ -5,6 +5,8 @@ interface IAdmin extends Document {
     email: string,
     password: string,
     lastLogin?: Date,
+    createdAt: Date,
+    updatedAt: Date,
 }
 
 const adminSchema = new mongoose.Schema<IAdmin>({
@@ -26,7 +28,7 @@ const adminSchema = new mongoose.Schema<IAdmin>({
         select: false
     },
     lastLogin: Date
-})
+}, {timestamps: true})
 
 const Admin: Model<IAdmin> = mongoose.model<IAdmin>(
     "Admin",

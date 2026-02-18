@@ -8,7 +8,9 @@ interface INotification extends Document {
     message: string,
     requestId: mongoose.Schema.Types.ObjectId,
     isRead: boolean,
-    readAt: Date
+    readAt: Date,
+    createdAt: Date,
+    updatedAt: Date
 }
 
 const notificationSchema = new mongoose.Schema<INotification>({
