@@ -41,6 +41,9 @@ export const customers = pgTable(
   }),
 );
 
+// Type for creating new customers
+export type NewCustomer = typeof customers.$inferInsert;
+
 export const admins = pgTable(
   "admins",
   {
@@ -118,6 +121,9 @@ export const serviceProviders = pgTable(
     emailIdx: index("service_providers_email_idx").on(table.email),
   }),
 );
+
+// Type for creating new customers
+export type NewServiceProvider = typeof serviceProviders.$inferInsert;
 
 export const serviceCategories = pgTable(
   "service_categories",
