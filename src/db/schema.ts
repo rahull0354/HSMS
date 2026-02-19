@@ -60,6 +60,9 @@ export const admins = pgTable(
   }),
 );
 
+// Type for creating new admins
+export type NewAdmin = typeof admins.$inferInsert;
+
 export const serviceProviders = pgTable(
   "service_providers",
   {
@@ -160,6 +163,9 @@ export const serviceCategories = pgTable(
   }),
 );
 
+// Type for creating new service categories
+export type NewServiceCategory = typeof serviceCategories.$inferInsert;
+
 export const serviceRequests = pgTable(
   "service_requests",
   {
@@ -242,6 +248,9 @@ export const serviceRequests = pgTable(
     statusIdx: index("service_requests_status_idx").on(table.status),
   }),
 );
+
+// Type for creating new service requests
+export type NewServiceRequest = typeof serviceRequests.$inferInsert;
 
 export const reviews = pgTable(
   "reviews",
