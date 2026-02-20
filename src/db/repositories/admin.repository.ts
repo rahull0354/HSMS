@@ -6,8 +6,9 @@ import {
   NewServiceCategory,
   serviceCategories,
   serviceProviders,
+  serviceRequests,
 } from "#db/schema.js";
-import { and, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lte, ne, or, sql } from "drizzle-orm";
 
 export class AdminRepository {
   async findById(id: string) {
@@ -422,5 +423,138 @@ export class AdminRepository {
       .limit(1);
 
     return result[0] || null;
+  }
+
+  //   dashboard function
+  async getDashboardStats() {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // customer statistics
+    const totalCustomers = await this.countCustomers()
+    const activeCustomers = await this.countCustomers({isActive: true})
+    const newCustomersToday = await this.countCustomersByDateRange(startOfDay, endOfDay)
+
+    // service provider statistics
+    const totalProviders = await this.countProviders()
+    const activeProviders = await this.countProviders({isActive: true})
+    const suspendedproviders = await this.countProviders({isSuspended: true})
+    const newProvidersToday = await this.countProvidersByDateRange(startOfDay, endOfDay)
+
+    // service categories statistics
+    const totalCategories = await this.countCategories()
+    const activeCategories = await this.countCategories({isActive: true})
+
+    // service request statistics
+    const requestStats = await this.getRequestStats()
+    const totalRequests = requestStats.total
+    const activeRequests = requestStats.requested + requestStats.assigned + requestStats.inProgress
+
+    // total new registrations today
+    const newRegistrationsToday = newCustomersToday + newProvidersToday
+
+    return {
+        customers: {
+            total: totalCustomers,
+            active: activeCustomers,
+            inactive: totalCustomers - activeCustomers,
+            newToday: newCustomersToday
+        },
+        providers: {
+            total: totalProviders,
+            active: activeProviders,
+            suspended: suspendedproviders,
+            inactive: totalProviders - activeProviders,
+            newToday: newProvidersToday
+        },
+        categories: {
+            total: totalCategories,
+            active: activeCategories,
+            inactive: totalCategories - activeCategories
+        },
+        requests: {
+            total: totalRequests,
+            active: activeRequests,
+            requested: requestStats.requested,
+            assigned: requestStats.assigned,
+            inProgress: requestStats.inProgress,
+            completed: requestStats.completed,
+            cancelled: requestStats.cancelled,
+        },
+        overview: {
+            newRegistrationsToday,
+            activeRequests
+        }
+    }
+  }
+
+  async countCustomersByDateRange(startDate: Date, endDate: Date) {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(customers)
+      .where(
+        and(
+          gte(customers.createdAt, startDate),
+          lte(customers.createdAt, endDate)
+        )
+      );
+
+    return Number(result[0]?.count || 0);
+  }
+
+  async countProvidersByDateRange(startDate: Date, endDate: Date) {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceProviders)
+      .where(
+        and(
+          gte(serviceProviders.createdAt, startDate),
+          lte(serviceProviders.createdAt, endDate)
+        )
+      );
+
+    return Number(result[0]?.count || 0);
+  }
+
+  async getRequestStats() {
+    const requests = await db
+      .select({
+        status: serviceRequests.status,
+      })
+      .from(serviceRequests);
+
+    const stats = {
+      total: requests.length,
+      requested: 0,
+      assigned: 0,
+      inProgress: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+
+    requests.forEach((request) => {
+      switch (request.status) {
+        case "requested":
+          stats.requested++;
+          break;
+        case "assigned":
+          stats.assigned++;
+          break;
+        case "in_progress":
+          stats.inProgress++;
+          break;
+        case "completed":
+          stats.completed++;
+          break;
+        case "cancelled":
+          stats.cancelled++;
+          break;
+      }
+    });
+
+    return stats;
   }
 }

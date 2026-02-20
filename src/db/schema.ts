@@ -258,6 +258,7 @@ export const reviews = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     serviceRequestId: uuid("service_request_id")
       .notNull()
+      .unique()
       .references(() => serviceRequests.id, { onDelete: "cascade" }),
     customerId: uuid("customer_id")
       .notNull()
@@ -294,6 +295,9 @@ export const reviews = pgTable(
   }),
 );
 
+// Type for creating new reviews
+export type NewReview = typeof reviews.$inferInsert;
+
 export const notifications = pgTable('notifications', {
     id: uuid("id").defaultRandom().primaryKey(),
     recipientId: uuid('recipient_id').notNull(),
@@ -311,3 +315,6 @@ export const notifications = pgTable('notifications', {
     recipientTypeIdx: index('notifications_recipient_type_idx').on(table.recipientType),
     isReadIdx: index('notifications_is_read_idx').on(table.isRead)
 }))
+
+// Type for creating new notifications
+export type NewNotification = typeof notifications.$inferInsert;
