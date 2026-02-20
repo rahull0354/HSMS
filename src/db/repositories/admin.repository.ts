@@ -558,3 +558,5 @@ export class AdminRepository {
     return stats;
   }
 }
+
+export const adminRepository = new AdminRepository()

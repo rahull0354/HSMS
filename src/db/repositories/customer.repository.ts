@@ -106,7 +106,7 @@ export class CustomerRepository {
 
   async count(filters?: {
     isActive: boolean;
-    createdAt?: { $gte?: Date; $lte?: Date };
+    createdAt?: { gte?: Date; lte?: Date };
   }) {
     const conditions = [];
 
@@ -114,11 +114,11 @@ export class CustomerRepository {
       conditions.push(eq(customers.isActive, filters.isActive));
     }
 
-    if (filters?.createdAt?.$gte && filters?.createdAt?.$lte) {
+    if (filters?.createdAt?.gte && filters?.createdAt?.lte) {
       conditions.push(
         and(
-          gte(customers.createdAt, filters.createdAt.$gte),
-          lte(customers.createdAt, filters.createdAt.$lte),
+          gte(customers.createdAt, filters.createdAt.gte),
+          lte(customers.createdAt, filters.createdAt.lte),
         ),
       );
     }

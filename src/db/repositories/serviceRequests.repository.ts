@@ -135,7 +135,7 @@ export class ServiceRequestRepository {
     if (additionalFilters?.status) {
       conditions.push(eq(serviceRequests.status, additionalFilters.status));
     }
-    
+
     return await db
       .select()
       .from(serviceRequests)
@@ -378,6 +378,62 @@ export class ServiceRequestRepository {
       .orderBy(desc(serviceRequests.createdAt));
   }
 
+  async count(filters?: {
+    customerId?: string;
+    providerId?: string;
+    status?: string;
+    city?: string;
+    serviceCategoryId?: string;
+  }) {
+    const conditions = [];
+
+    if (filters?.customerId) {
+      conditions.push(eq(serviceRequests.customerId, filters.customerId));
+    }
+
+    if (filters?.providerId) {
+      conditions.push(
+        eq(serviceRequests.serviceProviderId, filters.providerId),
+      );
+    }
+
+    if (filters?.status) {
+      conditions.push(eq(serviceRequests.status, filters.status));
+    }
+
+    if (filters?.city) {
+      sql`${serviceRequests.serviceAddress}->>'city' = ${filters.city.toLowerCase()}`;
+    }
+
+    if (filters?.serviceCategoryId) {
+      conditions.push(
+        eq(serviceRequests.serviceCategoryId, filters.serviceCategoryId),
+      );
+    }
+
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    return Number(result[0]?.count || 0);
+  }
+
+  // if customer have any active services before deactivating the account
+  async countActiveServices(customerId: string) {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.customerId, customerId),
+          inArray(serviceRequests.status, ["requested", "assigned", "in_progress"])
+        )
+      );
+
+    return Number(result[0]?.count || 0);
+  }
+
   async findAllWithPagination(params: {
     filters?: {
       customerId?: string;
@@ -453,19 +509,23 @@ export class ServiceRequestRepository {
       .limit(limit)
       .offset(offset);
 
-    const totalResult = await db.select({count: sql<number>`count(*)`}).from(serviceRequests)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
 
     return {
-        requests,
-        pagination: {
-            total: Number(totalResult[0]?.count || 0),
-            page,
-            limit,
-            totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
-            hasNext: page < Math.ceil(Number(totalResult[0]?.count || 0) / limit),
-            hasPrev: page > 1
-        }
-    }
+      requests,
+      pagination: {
+        total: Number(totalResult[0]?.count || 0),
+        page,
+        limit,
+        totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
+        hasNext: page < Math.ceil(Number(totalResult[0]?.count || 0) / limit),
+        hasPrev: page > 1,
+      },
+    };
   }
 }
+
+export const serviceRequestRepository = new ServiceRequestRepository();
