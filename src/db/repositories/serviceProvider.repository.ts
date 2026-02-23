@@ -184,12 +184,196 @@ export class ServiceProviderRepository {
         and(
           eq(serviceProviders.isActive, true),
           eq(serviceProviders.isSuspended, false),
-          sql`${serviceProviders.skills} @> ${sql`[${JSON.stringify(skill)}]::jsonb`}`
+          sql`${serviceProviders.skills} @> ${sql`[${JSON.stringify(skill)}]::jsonb`}`,
         ),
       );
 
     return result;
   }
+
+  //   search providers with multiple filters
+  async searchProviders(filters: {
+    skill?: string;
+    city?: string;
+    area?: string;
+    minRating?: number;
+    maxRating?: number;
+    pricingType?: string;
+    availabilityStatus?: string;
+    sortBy?: string;
+    order?: "asc" | "desc";
+    page?: number;
+    limit?: number;
+  }) {
+    const conditions = [
+      eq(serviceProviders.isActive, true),
+      eq(serviceProviders.isSuspended, false),
+    ];
+
+    // Filter by skill
+    if (filters.skill) {
+      conditions.push(
+        sql`${serviceProviders.skills} @> ${sql`[${JSON.stringify(filters.skill.trim().toLowerCase())}]::jsonb`}`,
+      );
+    }
+
+    // Filter by city in serviceArea
+    if (filters.city) {
+      conditions.push(
+        sql`${serviceProviders.serviceArea}->'cities' @> ${sql`[${JSON.stringify(filters.city.trim().toLowerCase())}]::jsonb`}`,
+      );
+    }
+
+    // Filter by area in serviceArea
+    if (filters.area) {
+      conditions.push(
+        sql`${serviceProviders.serviceArea}->'areas' @> ${sql`[${JSON.stringify(filters.area.trim().toLowerCase())}]::jsonb`}`,
+      );
+    }
+
+    // Filter by rating range
+    if (filters.minRating !== undefined) {
+      conditions.push(
+        sql`CAST(${serviceProviders.averageRating} AS FLOAT) >= ${filters.minRating}`,
+      );
+    }
+
+    if (filters.maxRating !== undefined) {
+      conditions.push(
+        sql`CAST(${serviceProviders.averageRating} AS FLOAT) <= ${filters.maxRating}`,
+      );
+    }
+
+    // Filter by pricing type
+    if (filters.pricingType) {
+      const validPricingTypes = [
+        "hourly",
+        "fixed",
+        "per-job",
+        "per-visit",
+        "quote",
+      ];
+      if (validPricingTypes.includes(filters.pricingType)) {
+        conditions.push(
+          eq(serviceProviders.pricingType, filters.pricingType as any),
+        );
+      }
+    }
+
+    // Filter by availability status
+    if (filters.availabilityStatus) {
+      const validStatuses = ["available", "busy", "offline"];
+      if (validStatuses.includes(filters.availabilityStatus)) {
+        conditions.push(
+          eq(
+            serviceProviders.availabilityStatus,
+            filters.availabilityStatus as any,
+          ),
+        );
+      }
+    }
+
+    // Sorting
+    const sortBy = filters.sortBy || "averageRating";
+    const order = filters.order || "desc";
+
+    let orderByClause;
+    switch (sortBy) {
+      case "averageRating":
+        orderByClause =
+          order === "asc"
+            ? sql`CAST(${serviceProviders.averageRating} AS FLOAT) ASC`
+            : sql`CAST(${serviceProviders.averageRating} AS FLOAT) DESC`;
+        break;
+      case "totalReviews":
+        orderByClause =
+          order === "asc"
+            ? serviceProviders.totalReviews
+            : desc(serviceProviders.totalReviews);
+        break;
+      case "totalJobsCompleted":
+        orderByClause =
+          order === "asc"
+            ? serviceProviders.totalJobsCompleted
+            : desc(serviceProviders.totalJobsCompleted);
+        break;
+      case "experienceYears":
+        orderByClause =
+          order === "asc"
+            ? serviceProviders.experienceYears
+            : desc(serviceProviders.experienceYears);
+        break;
+      case "name":
+        orderByClause =
+          order === "asc" ? serviceProviders.name : desc(serviceProviders.name);
+        break;
+      case "createdAt":
+        orderByClause =
+          order === "asc"
+            ? serviceProviders.createdAt
+            : desc(serviceProviders.createdAt);
+        break;
+      default:
+        orderByClause = sql`CAST(${serviceProviders.averageRating} AS FLOAT) DESC`;
+    }
+
+    // Pagination
+    const page = filters.page || 1;
+    const limit = filters.limit || 10;
+    const offset = (page - 1) * limit;
+
+    const providers = await db
+      .select()
+      .from(serviceProviders)
+      .where(and(...conditions))
+      .orderBy(orderByClause)
+      .limit(limit)
+      .offset(offset);
+
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceProviders)
+      .where(and(...conditions));
+
+    return {
+      providers,
+      total: Number(totalResult[0]?.count || 0),
+      page,
+      limit,
+      totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
+    };
+  }
+
+  async getPublicProfile(id: string) {
+    const result = await db
+      .select({
+        id: serviceProviders.id,
+        name: serviceProviders.name,
+        profilePicture: serviceProviders.profilePicture,
+        bio: serviceProviders.bio,
+        skills: serviceProviders.skills,
+        experienceYears: serviceProviders.experienceYears,
+        certifications: serviceProviders.certifications,
+        pricingType: serviceProviders.pricingType,
+        workingHours: serviceProviders.workingHours,
+        availabilityStatus: serviceProviders.availabilityStatus,
+        averageRating: serviceProviders.averageRating,
+        totalReviews: serviceProviders.totalReviews,
+        totalJobsCompleted: serviceProviders.totalJobsCompleted,
+        createdAt: serviceProviders.createdAt,
+      })
+      .from(serviceProviders)
+      .where(
+        and(
+          eq(serviceProviders.id, id),
+          eq(serviceProviders.isActive, true),
+          eq(serviceProviders.isSuspended, false),
+        ),
+      )
+      .limit(1);
+
+    return result[0] || null;
+  }
 }
 
-export const serviceProviderRepository = new ServiceProviderRepository()
+export const serviceProviderRepository = new ServiceProviderRepository();

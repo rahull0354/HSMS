@@ -1,5 +1,5 @@
 import db from "#db/index.js";
-import { NewReview, reviews } from "#db/schema.js";
+import { NewReview, reviews, serviceProviders, serviceRequests } from "#db/schema.js";
 import { and, desc, eq, ilike, sql } from "drizzle-orm";
 
 export class ReviewsRepository {
@@ -118,6 +118,77 @@ export class ReviewsRepository {
     const reviewsList = await db
       .select()
       .from(reviews)
+      .where(and(...conditions))
+      .orderBy(orderByClause)
+      .limit(limit)
+      .offset(offset);
+
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(reviews)
+      .where(and(...conditions));
+
+    return {
+      reviews: reviewsList,
+      total: Number(totalResult[0]?.count || 0),
+      page,
+      limit,
+      totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
+    };
+  }
+
+  async findByCustomerWithDetails(
+    customerId: string,
+    pagination?: { page?: number; limit?: number },
+    filters?: { rating?: number; sortBy?: string; order?: "asc" | "desc" }
+  ) {
+    const conditions = [eq(reviews.customerId, customerId)];
+
+    if (filters?.rating) {
+      conditions.push(eq(reviews.rating, filters.rating));
+    }
+
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const offset = (page - 1) * limit;
+
+    const sortBy = filters?.sortBy || "createdAt";
+    const order = filters?.order || "desc";
+
+    const orderByField =
+      sortBy === "rating"
+        ? reviews.rating
+        : sortBy === "updatedAt"
+          ? reviews.updatedAt
+          : reviews.createdAt;
+
+    const orderByClause = order === "asc" ? orderByField : desc(orderByField);
+
+    const reviewsList = await db
+      .select({
+        // Review fields
+        id: reviews.id,
+        rating: reviews.rating,
+        comment: reviews.comment,
+        detailedRatings: reviews.detailedRatings,
+        providerResponse: reviews.providerResponse,
+        isVisible: reviews.isVisible,
+        isFlagged: reviews.isFlagged,
+        createdAt: reviews.createdAt,
+        updatedAt: reviews.updatedAt,
+        // Provider fields
+        serviceProviderId: serviceProviders.id,
+        providerName: serviceProviders.name,
+        providerEmail: serviceProviders.email,
+        providerProfilePicture: serviceProviders.profilePicture,
+        // Request fields
+        serviceRequestId: serviceRequests.id,
+        serviceTitle: serviceRequests.serviceTitle,
+        serviceAddress: serviceRequests.serviceAddress,
+      })
+      .from(reviews)
+      .innerJoin(serviceProviders, eq(reviews.serviceProviderId, serviceProviders.id))
+      .innerJoin(serviceRequests, eq(reviews.serviceRequestId, serviceRequests.id))
       .where(and(...conditions))
       .orderBy(orderByClause)
       .limit(limit)
@@ -473,6 +544,8 @@ export class ReviewsRepository {
 
     return Number(result[0]?.count || 0);
   }
+
+  
 }
 
 export const reviewsRepository = new ReviewsRepository();
