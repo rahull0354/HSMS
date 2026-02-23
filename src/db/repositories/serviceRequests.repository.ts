@@ -18,10 +18,10 @@ export class ServiceRequestRepository {
       .select()
       .from(serviceRequests)
       .where(
-        and (
+        and(
           eq(serviceRequests.id, reviewId),
-          eq(serviceRequests.customerId, customerId)
-        )
+          eq(serviceRequests.customerId, customerId),
+        ),
       )
       .limit(1);
 
@@ -442,8 +442,12 @@ export class ServiceRequestRepository {
       .where(
         and(
           eq(serviceRequests.customerId, customerId),
-          inArray(serviceRequests.status, ["requested", "assigned", "in_progress"])
-        )
+          inArray(serviceRequests.status, [
+            "requested",
+            "assigned",
+            "in_progress",
+          ]),
+        ),
       );
 
     return Number(result[0]?.count || 0);
@@ -456,8 +460,30 @@ export class ServiceRequestRepository {
       .where(
         and(
           eq(serviceRequests.serviceProviderId, serviceProviderId),
-          inArray(serviceRequests.status, ["requested", "assigned", "in_progress"])
-        )
+          inArray(serviceRequests.status, [
+            "requested",
+            "assigned",
+            "in_progress",
+          ]),
+        ),
+      );
+
+    return Number(result[0]?.count || 0);
+  }
+
+  async countActiveRequestsInCategory(categoryId: string) {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.serviceCategoryId, categoryId),
+          inArray(serviceRequests.status, [
+            "requested",
+            "assigned",
+            "in_progress",
+          ]),
+        ),
       );
 
     return Number(result[0]?.count || 0);

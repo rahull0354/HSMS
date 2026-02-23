@@ -3,12 +3,11 @@ import {
   admins,
   customers,
   NewAdmin,
-  NewServiceCategory,
-  serviceCategories,
   serviceProviders,
   serviceRequests,
 } from "#db/schema.js";
 import { and, desc, eq, gte, ilike, lte, ne, or, sql } from "drizzle-orm";
+import { serviceCategory } from "./serviceCategory.repository.js";
 
 export class AdminRepository {
   async findById(id: string) {
@@ -28,7 +27,7 @@ export class AdminRepository {
       .where(eq(admins.email, email))
       .limit(1);
 
-    return result;
+    return result[0] || null;
   }
 
   async create(data: NewAdmin) {
@@ -52,153 +51,6 @@ export class AdminRepository {
       .select({ count: sql<number>`count(*)` })
       .from(admins);
     return Number(result[0]?.count || 0);
-  }
-
-  //   service category functions
-
-  async findCategoryByNameOrSlug(name: string, slug: string) {
-    const result = await db
-      .select()
-      .from(serviceCategories)
-      .where(
-        or(eq(serviceCategories.name, name), eq(serviceCategories.slug, slug)),
-      )
-      .limit(1);
-
-    return result[0] || null;
-  }
-
-  async createCategory(data: NewServiceCategory) {
-    const result = await db.insert(serviceCategories).values(data).returning();
-
-    return result[0] || null;
-  }
-
-  async findAllCategories(
-    filters?: {
-      isActive?: boolean;
-    },
-    pagination?: {
-      page?: number;
-      limit?: number;
-    },
-  ) {
-    const conditions = [];
-
-    if (filters?.isActive !== undefined) {
-      conditions.push(eq(serviceCategories.isActive, filters.isActive));
-    }
-
-    const page = pagination?.page || 1;
-    const limit = pagination?.limit || 10;
-    const offset = (page - 1) * limit;
-
-    const categories = await db
-      .select()
-      .from(serviceCategories)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
-
-    const totalResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(serviceCategories)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
-
-    return {
-      categories,
-      total: Number(totalResult[0]?.count || 0),
-      page,
-      limit,
-      totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
-    };
-  }
-
-  async countCategories(filters?: { isActive?: boolean }) {
-    const conditions = [];
-
-    if (filters?.isActive !== undefined) {
-      conditions.push(eq(serviceCategories.isActive, filters.isActive));
-    }
-
-    const result = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(serviceCategories)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
-
-    return Number(result[0]?.count || 0);
-  }
-
-  async findCategoryById(id: string) {
-    const result = await db
-      .select()
-      .from(serviceCategories)
-      .where(eq(serviceCategories.id, id))
-      .limit(1);
-
-    return result[0] || null;
-  }
-
-  async updateCategoryById(id: string, data: Partial<NewServiceCategory>) {
-    const result = await db
-      .update(serviceCategories)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(serviceCategories.id, id))
-      .returning();
-
-    return result[0] || null;
-  }
-
-  async checkCategoryNameExists(name: string, excludeId?: string) {
-    const conditions = [eq(serviceCategories.name, name)];
-
-    if (excludeId) {
-      conditions.push(ne(serviceCategories.id, excludeId));
-    }
-
-    const result = await db
-      .select()
-      .from(serviceCategories)
-      .where(and(...conditions))
-      .limit(1);
-
-    return result[0] || null;
-  }
-
-  async checkCategorySlugExists(slug: string, excludeId?: string) {
-    const conditions = [eq(serviceCategories.slug, slug)];
-
-    if (excludeId) {
-      conditions.push(ne(serviceCategories.id, excludeId));
-    }
-
-    const result = await db
-      .select()
-      .from(serviceCategories)
-      .where(and(...conditions))
-      .limit(1);
-
-    return result[0] || null;
-  }
-
-  async toggleCategoryStatus(id: string) {
-    const category = await this.findCategoryById(id);
-    if (!category) return null;
-
-    const result = await db
-      .update(serviceCategories)
-      .set({ isActive: !category.isActive, updatedAt: new Date() })
-      .where(eq(serviceCategories.id, id))
-      .returning();
-
-    return result[0] || null;
-  }
-
-  async deleteCategory(id: string) {
-    const result = await db
-      .delete(serviceCategories)
-      .where(eq(serviceCategories.id, id))
-      .returning();
-
-    return result[0] || null;
   }
 
   //   service provider functions
@@ -339,6 +191,86 @@ export class AdminRepository {
     return result[0] || null;
   }
 
+  async getAllServiceProviders(
+    filters?: {
+      isActive?: boolean;
+      isSuspended?: boolean;
+      search?: string;
+    },
+    pagination?: {
+      page?: number;
+      limit?: number;
+    },
+  ) {
+    const conditions = [];
+
+    if (filters?.isActive !== undefined) {
+      conditions.push(eq(serviceProviders.isActive, filters.isActive));
+    }
+
+    if (filters?.isSuspended !== undefined) {
+      conditions.push(eq(serviceProviders.isSuspended, filters.isSuspended));
+    }
+
+    if (filters?.search) {
+      conditions.push(
+        or(
+          ilike(serviceProviders.name, `%${filters.search}%`),
+          ilike(serviceProviders.email, `%${filters.search}%`),
+        ),
+      );
+    }
+
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const offset = (page - 1) * limit;
+
+    const providers = await db
+      .select({
+        id: serviceProviders.id,
+        name: serviceProviders.name,
+        email: serviceProviders.email,
+        phone: serviceProviders.phone,
+        profilePicture: serviceProviders.profilePicture,
+        bio: serviceProviders.bio,
+        skills: serviceProviders.skills,
+        experienceYears: serviceProviders.experienceYears,
+        certifications: serviceProviders.certifications,
+        pricingType: serviceProviders.pricingType,
+        serviceArea: serviceProviders.serviceArea,
+        workingHours: serviceProviders.workingHours,
+        availabilityStatus: serviceProviders.availabilityStatus,
+        averageRating: serviceProviders.averageRating,
+        totalReviews: serviceProviders.totalReviews,
+        totalJobsCompleted: serviceProviders.totalJobsCompleted,
+        isActive: serviceProviders.isActive,
+        isSuspended: serviceProviders.isSuspended,
+        suspensionReason: serviceProviders.suspensionReason,
+        createdAt: serviceProviders.createdAt,
+        updatedAt: serviceProviders.updatedAt,
+        lastLogin: serviceProviders.lastLogin,
+        deactivatedAt: serviceProviders.deactivatedAt,
+      })
+      .from(serviceProviders)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(serviceProviders.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceProviders)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    return {
+      providers,
+      total: Number(totalResult[0]?.count || 0),
+      page,
+      limit,
+      totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
+    };
+  }
+
   //   customer functions
   async findAllCustomers(
     filters?: {
@@ -445,8 +377,8 @@ export class AdminRepository {
     const newProvidersToday = await this.countProvidersByDateRange(startOfDay, endOfDay)
 
     // service categories statistics
-    const totalCategories = await this.countCategories()
-    const activeCategories = await this.countCategories({isActive: true})
+    const totalCategories = await serviceCategory.countCategories()
+    const activeCategories = await serviceCategory.countCategories({isActive: true})
 
     // service request statistics
     const requestStats = await this.getRequestStats()
