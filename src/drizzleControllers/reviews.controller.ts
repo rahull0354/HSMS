@@ -2,6 +2,7 @@ import { customerRepository } from "#db/repositories/customer.repository.js";
 import { reviewsRepository } from "#db/repositories/reviews.repository.js";
 import { serviceProviderRepository } from "#db/repositories/serviceProvider.repository.js";
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
+import { reviews } from "#db/schema.js";
 import { handleReviewResponseNotification } from "#services/notification.service.js";
 import { Request, Response } from "express";
 
@@ -207,7 +208,7 @@ export const getMyReviews = async (req: Request, res: Response) => {
       {
         rating: ratingFilter,
         sortBy,
-        order,
+        order: (order as "asc") || "desc",
       },
     );
 
@@ -263,948 +264,759 @@ export const getMyReviews = async (req: Request, res: Response) => {
   }
 };
 
-// export const updateReview = async (req: Request, res: Response) => {
-//   try {
-//     const customerId = (req as any).user.id;
-//     const { reviewId } = req.params;
-//     const { rating, comment, detailedRatings } = req.body;
-
-//     if (!reviewId) {
-//       res.status(400).json({
-//         message: "Review Id is required",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (!rating && !comment && !detailedRatings) {
-//       res.status(400).json({
-//         message:
-//           "At least one field (rating, comment, or detailedRatings) is required",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (rating !== undefined && (rating < 1 || rating > 5)) {
-//       res.status(400).json({
-//         message: "Rating must be between 1 & 5",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const customer = await Customer.findById(customerId);
-//     if (!customer) {
-//       res.status(404).json({
-//         message: "Customer Not Found!",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (!customer.isActive) {
-//       res.status(403).json({
-//         message:
-//           "Your account is deactivated. Please reactivate to update reviews.",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const review = await Reviews.findById(reviewId);
-
-//     if (!review) {
-//       res.status(404).json({
-//         message: "Review Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (review.customerId.toString() !== customerId) {
-//       res.status(403).json({
-//         message: "You are not authorized to update this review",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     // storing old rating for updating provider
-//     const oldRating = review.rating;
-//     const oldReview = { ...review.toObject() };
-
-//     // update review field
-//     if (rating !== undefined) {
-//       review.rating = rating;
-//     }
-
-//     if (comment !== undefined) {
-//       review.comment = comment;
-//     }
-
-//     if (detailedRatings !== undefined) {
-//       review.detailedRatings = {
-//         ...review.detailedRatings,
-//         ...detailedRatings,
-//       };
-//     }
-
-//     await review.save();
-
-//     if (rating !== undefined && rating !== oldRating) {
-//       const provider = await ServiceProvider.findById(review.serviceProviderId);
-
-//       if (provider) {
-//         const allReviews = await Reviews.find({
-//           serviceProviderId: provider._id as any,
-//         });
-
-//         const totalRating = allReviews.reduce((sum, r) => sum + r.rating, 0);
-//         const averageRating = totalRating / allReviews.length;
-
-//         provider.averageRating = parseFloat(averageRating.toFixed(2));
-//         await provider.save();
-//       }
-//     }
-
-//     res.status(200).json({
-//       message: "Review Updated Successfully.",
-//       success: true,
-//       data: {
-//         review: review,
-//         changes: {
-//           ratingChanged: rating !== undefined && rating !== oldRating,
-//           oldRating: oldRating,
-//           newRating: review.rating,
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Updating the Review",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// export const deleteReview = async (req: Request, res: Response) => {
-//   try {
-//     const customerId = (req as any).user.id;
-//     const { reviewId } = req.params;
-
-//     if (!reviewId) {
-//       res.status(400).json({
-//         message: "Review ID is required",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const customer = await Customer.findById(customerId);
-//     if (!customer) {
-//       res.status(404).json({
-//         message: "Customer Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (!customer.isActive) {
-//       res.status(403).json({
-//         message:
-//           "Your account is deactivated. Please reactivate to delete reviews.",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const review = await Reviews.findById(reviewId);
-
-//     if (!review) {
-//       res.status(404).json({
-//         message: "Review Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     // check if review belongs to this customer
-//     if (review.customerId.toString() !== customerId) {
-//       res.status(403).json({
-//         message: "You are not authorized to delete this review",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     // store provider ID before deleting
-//     const providerId = review.serviceProviderId;
-
-//     // delete the review
-//     await Reviews.findByIdAndDelete(reviewId);
-
-//     // update provider's average rating and total reviews
-//     const provider = await ServiceProvider.findById(providerId);
-
-//     if (provider) {
-//       const allReviews = await Reviews.find({
-//         serviceProviderId: provider._id as any,
-//       });
-
-//       if (allReviews.length > 0) {
-//         const totalRating = allReviews.reduce((sum, r) => sum + r.rating, 0);
-//         const averageRating = totalRating / allReviews.length;
-
-//         provider.averageRating = parseFloat(averageRating.toFixed(2));
-//         provider.totalReviews = allReviews.length;
-//       } else {
-//         // no reviews left
-//         provider.averageRating = 0;
-//         provider.totalReviews = 0;
-//       }
-
-//       await provider.save();
-//     }
-
-//     res.status(200).json({
-//       message: "Review Deleted Successfully",
-//       success: true,
-//       data: {
-//         deletedReviewId: reviewId,
-//         provider: provider
-//           ? {
-//               name: provider.name,
-//               updatedAverageRating: provider.averageRating,
-//               totalReviews: provider.totalReviews,
-//             }
-//           : null,
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Deleting Review",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// // provider functions
-
-// export const respondToReview = async (req: Request, res: Response) => {
-//   try {
-//     const providerId = (req as any).user.id;
-//     const { reviewId } = req.params;
-//     const { comment } = req.body;
-
-//     if (!reviewId) {
-//       res.status(400).json({
-//         message: "Review Id is required",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (!comment || comment.trim().length === 0) {
-//       res.status(400).json({
-//         message: "Comment is required.",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const provider = await ServiceProvider.findById(providerId);
-//     if (!provider) {
-//       res.status(404).json({
-//         message: "Service Provider Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (!provider.isActive) {
-//       res.status(403).json({
-//         message:
-//           "Your account is deactivated. Please reactivate to respond to reviews.",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (provider.isSuspended) {
-//       res.status(403).json({
-//         message: `Your account is suspended. Reason: ${provider.suspensionReason || "Contact support for details."}`,
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     // finding the review
-//     const review = await Reviews.findById(reviewId).populate(
-//       "customerId",
-//       "name email",
-//     );
-
-//     if (!review) {
-//       res.status(404).json({
-//         message: "Review Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (review.serviceProviderId.toString() !== providerId) {
-//       res.status(403).json({
-//         message: "You are not authorized to respond to this review",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (review.providerResponse?.comment) {
-//       res.status(400).json({
-//         message: "You have already responded to the review.",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     // update the review with providers response
-//     review.providerResponse = {
-//       comment: comment.trim(),
-//       respondedAt: new Date(),
-//     };
-
-//     await review.save();
-
-//     const customer = review.customerId as any;
-
-//     const notificationResult = await handleReviewResponseNotification(
-//       customer._id,
-//       customer.name,
-//       provider._id as any,
-//       provider.name,
-//       review._id as any,
-//       review.providerResponse?.comment || comment.trim(),
-//     );
-
-//     res.status(200).json({
-//       message: "Response Added Successfully.",
-//       success: true,
-//       data: {
-//         review: {
-//           _id: review._id,
-//           providerResponse: review.providerResponse,
-//         },
-//         customer: {
-//           name: customer.name,
-//           notified: notificationResult.success,
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Responding to Review",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// export const getReviewsAboutMe = async (req: Request, res: Response) => {
-//   try {
-//     const providerId = (req as any).user.id;
-
-//     const page = parseInt(req.query.page as string) || 1;
-//     const limit = parseInt(req.query.limit as string) || 10;
-//     const skip = (page - 1) * limit;
-//     const sortBy = (req.query.sortBy as string) || "createdAt";
-//     const order = (req.query.order as string) || "desc";
-//     const rating = req.query.rating as string;
-
-//     const provider = await ServiceProvider.findById(providerId);
-//     if (!provider) {
-//       res.status(404).json({
-//         message: "Service Provider Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const filter: any = {
-//       serviceProviderId: providerId,
-//       isVisible: true,
-//     };
-
-//     if (rating) {
-//       const ratingNum = parseInt(rating);
-//       if (ratingNum < 1 || ratingNum > 5) {
-//         res.status(400).json({
-//           message: "Rating must be between 1 and 5",
-//           success: false,
-//         });
-//         return;
-//       }
-//       filter.rating = ratingNum;
-//     }
-
-//     // build sort object
-//     const validSortFields = ["createdAt", "rating", "updatedAt"];
-//     const sortObj: any = {};
-
-//     if (validSortFields.includes(sortBy)) {
-//       sortObj[sortBy] = order === "asc" ? 1 : -1;
-//     } else {
-//       sortObj.createdAt = -1;
-//     }
-
-//     // fetch reviews
-//     const reviews = await Reviews.find(filter)
-//       .populate("customerId", "name profilePicture")
-//       .populate("serviceRequestId", "serviceTitle")
-//       .sort(sortObj)
-//       .skip(skip)
-//       .limit(limit);
-
-//     const totalReviews = await Reviews.countDocuments(filter);
-
-//     // calculate rating distribution
-//     const ratingDistribution = await Reviews.aggregate([
-//       {
-//         $match: { serviceProviderId: provider._id, isVisible: true },
-//       },
-//       {
-//         $group: {
-//           _id: "$rating",
-//           count: { $sum: 1 },
-//         },
-//       },
-//     ]);
-
-//     const distribution = {
-//       5: 0,
-//       4: 0,
-//       3: 0,
-//       2: 0,
-//       1: 0,
-//     };
-
-//     ratingDistribution.forEach((item: any) => {
-//       distribution[item._id as keyof typeof distribution] = item.count;
-//     });
-
-//     res.status(200).json({
-//       message: "Reviews About Me Retrieved Successfully",
-//       success: true,
-//       data: {
-//         provider: {
-//           id: provider._id,
-//           name: provider.name,
-//           averageRating: provider.averageRating,
-//           totalReviews: provider.totalReviews,
-//           ratingDistribution: distribution,
-//         },
-//         reviews: reviews,
-//         pagination: {
-//           currentPage: page,
-//           totalPages: Math.ceil(totalReviews / limit),
-//           totalReviews,
-//           limit,
-//           hasNext: page < Math.ceil(totalReviews / limit),
-//           hasPrev: page > 1,
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Fetching Reviews About Me",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// // admin functions
-
-// export const flagCustomerReview = async (req: Request, res: Response) => {
-//   try {
-//     const adminId = (req as any).user.id;
-//     const { reviewId } = req.params;
-//     const { reason, hideReview } = req.body;
-
-//     if (!reviewId) {
-//       res.status(400).json({
-//         message: "Review Id is required",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const review = await Reviews.findById(reviewId);
-
-//     if (!review) {
-//       res.status(404).json({
-//         message: "Review not found!",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (review.isFlagged) {
-//       res.status(400).json({
-//         message: "Review is already Flagged",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     // flagging the review
-//     review.isFlagged = true;
-//     review.flagReason = reason;
-
-//     // hiding the review when flagged
-//     if (hideReview === true) {
-//       review.isVisible = false;
-//     }
-
-//     await review.save();
-
-//     res.status(200).json({
-//       message: "Review Flagged Successfully!",
-//       success: true,
-//       data: {
-//         review: {
-//           _id: review._id,
-//           isFlagged: review.isFlagged,
-//           isVisible: review.isVisible,
-//           flagReason: reason || "Not Specified",
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Flagging the Review",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// export const unFlagCustomerReview = async (req: Request, res: Response) => {
-//   try {
-//     const adminId = (req as any).user.id;
-//     const { reviewId } = req.params;
-
-//     if (!reviewId) {
-//       res.status(400).json({
-//         message: "Review Id is required.",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const review = await Reviews.findById(reviewId);
-//     if (!review) {
-//       res.status(404).json({
-//         message: "Review not found !",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (!review.isFlagged) {
-//       res.status(400).json({
-//         message: "Review is not flagged.",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     review.isFlagged = false;
-//     review.isVisible = true;
-//     review.flagReason = undefined;
-
-//     await review.save();
-
-//     res.status(200).json({
-//       message: "Review Un-Flagged Successfully!",
-//       success: true,
-//       data: {
-//         review: {
-//           _id: review._id,
-//           isFlagged: review.isFlagged,
-//           isVisible: review.isVisible,
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Un-Flagging the Review",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// export const toggleReviewVisibility = async (req: Request, res: Response) => {
-//   try {
-//     const adminId = (req as any).user.id;
-//     const { reviewId } = req.params;
-//     const { isVisible } = req.body;
-
-//     if (!reviewId) {
-//       res.status(400).json({
-//         message: "Review Id is required!",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const review = await Reviews.findById(reviewId);
-
-//     if (!review) {
-//       res.status(404).json({
-//         message: "Review not found !",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (isVisible !== undefined) {
-//       review.isVisible = isVisible;
-//     } else {
-//       review.isVisible = !review.isVisible;
-//     }
-
-//     await review.save();
-
-//     res.status(200).json({
-//       message: `Review ${review.isVisible ? "Visible" : "Hidden"} Successfully !`,
-//       success: true,
-//       data: {
-//         review: {
-//           _id: review._id,
-//           isVisible: review.isVisible,
-//           isFlagged: review.isFlagged,
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Toggling the visibility of Review",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// export const getAllReviews = async (req: Request, res: Response) => {
-//   try {
-//     const adminId = (req as any).user.id;
-
-//     const page = parseInt(req.query.page as string) || 1;
-//     const limit = parseInt(req.query.limit as string) || 10;
-//     const skip = (page - 1) * limit;
-//     const sortBy = (req.query.sortBy as string) || "createdAt";
-//     const order = (req.query.order as string) || "desc";
-//     const rating = req.query.rating as string;
-//     const isFlagged = req.query.isFlagged;
-//     const isVisible = req.query.isVisible;
-
-//     // build filter object
-//     const filter: any = {};
-
-//     // filter by visibility status
-//     if (isVisible !== undefined) {
-//       filter.isVisible = isVisible === "true";
-//     }
-
-//     // filter by flagged status
-//     if (isFlagged !== undefined) {
-//       filter.isFlagged = isFlagged === "true";
-//     }
-
-//     if (rating) {
-//       const ratingNum = parseInt(rating);
-//       if (ratingNum < 1 || ratingNum > 5) {
-//         res.status(400).json({
-//           message: "Rating should be between 1 & 5",
-//           success: false,
-//         });
-//         return;
-//       }
-//       filter.rating = ratingNum;
-//     }
-
-//     const validSortFields = ["createdAt", "rating", "updatedAt", "isFlagged"];
-//     const sortObj: any = {};
-
-//     if (validSortFields.includes(sortBy)) {
-//       sortObj[sortBy] = order === "asc" ? 1 : -1;
-//     } else {
-//       sortObj.createdAt = -1; // default sort
-//     }
-
-//     const reviews = await Reviews.find(filter)
-//       .populate("customerId", "name email profilePicture")
-//       .populate("serviceProviderId", "name email averageRating")
-//       .populate("serviceRequestId", "serviceTitle serviceAddress status")
-//       .sort(sortObj)
-//       .skip(skip)
-//       .limit(limit);
-
-//     const totalReviews = await Reviews.countDocuments(filter);
-
-//     // overall statistics calculations
-//     const ratingDistribution = await Reviews.aggregate([
-//       {
-//         $group: {
-//           _id: "$rating",
-//           count: { $sum: 1 },
-//         },
-//       },
-//     ]);
-
-//     const distribution = {
-//       5: 0,
-//       4: 0,
-//       3: 0,
-//       2: 0,
-//       1: 0,
-//     };
-
-//     ratingDistribution.forEach((item: any) => {
-//       distribution[item._id as keyof typeof distribution] = item.count;
-//     });
-
-//     const totalFlaggedReviews = await Reviews.countDocuments({
-//       isFlagged: true,
-//     });
-
-//     const totalHiddenReviews = await Reviews.countDocuments({
-//       isVisible: false,
-//     });
-
-//     res.status(200).json({
-//       message: "All Reviews Retrieved Successfully",
-//       success: true,
-//       data: {
-//         reviews: reviews,
-//         statistics: {
-//           totalReviews: totalReviews,
-//           flaggedReviews: totalFlaggedReviews,
-//           hiddenReviews: totalHiddenReviews,
-//           ratingDistribution: distribution,
-//         },
-//         pagination: {
-//           currentPage: page,
-//           totalPages: Math.ceil(totalReviews / limit),
-//           totalReviews,
-//           limit,
-//           hasNext: page < Math.ceil(totalReviews / limit),
-//           hasPrev: page > 1,
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Fetching all Reviews",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
+export const updateReview = async (req: Request, res: Response) => {
+  try {
+    const customerId = (req as any).user.id;
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
+
+    const { rating, comment, detailedRatings } = req.body;
+
+    if (!reviewId) {
+      res.status(400).json({
+        message: "Review Id is required",
+        success: false,
+      });
+      return;
+    }
+
+    if (!rating && !comment && !detailedRatings) {
+      res.status(400).json({
+        message:
+          "At least one field (rating, comment, or detailedRatings) is required",
+        success: false,
+      });
+      return;
+    }
+
+    if (rating !== undefined && (rating < 1 || rating > 5)) {
+      res.status(400).json({
+        message: "Rating must be between 1 & 5",
+        success: false,
+      });
+      return;
+    }
+
+    const customer = await customerRepository.findById(customerId);
+    if (!customer) {
+      res.status(404).json({
+        message: "Customer Not Found!",
+        success: false,
+      });
+      return;
+    }
+
+    if (!customer.isActive) {
+      res.status(403).json({
+        message:
+          "Your account is deactivated. Please reactivate to update reviews.",
+        success: false,
+      });
+      return;
+    }
+
+    const review = await reviewsRepository.findById(reviewIdValue);
+
+    if (!review) {
+      res.status(404).json({
+        message: "Review Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    if (review.customerId !== customerId) {
+      res.status(403).json({
+        message: "You are not authorized to update this review",
+        success: false,
+      });
+      return;
+    }
+
+    // storing old rating for updating provider
+    const oldRating = review.rating;
+
+    const updateData: any = {};
+
+    // update review field
+    if (rating !== undefined) {
+      updateData.rating = rating;
+    }
+
+    if (comment !== undefined) {
+      updateData.comment = comment;
+    }
+
+    if (detailedRatings !== undefined) {
+      updateData.detailedRatings = {
+        ...(review.detailedRatings as any),
+        ...detailedRatings,
+      };
+    }
+
+    const updatedReview = await reviewsRepository.update(
+      reviewIdValue,
+      updateData,
+    );
+
+    if (rating !== undefined && rating !== oldRating) {
+      const averageRating = await reviewsRepository.getAverageRating(
+        review.serviceProviderId,
+      );
+      const totalReviews = await reviewsRepository.countByProvider(
+        review.serviceProviderId,
+        false,
+      );
+
+      await serviceProviderRepository.updateRatingStats(
+        review.serviceProviderId,
+        {
+          averageRating: averageRating.toString(),
+          totalReviews,
+        },
+      );
+    }
+
+    res.status(200).json({
+      message: "Review Updated Successfully.",
+      success: true,
+      data: {
+        review: updatedReview,
+        changes: {
+          ratingChanged: rating !== undefined && rating !== oldRating,
+          oldRating,
+          newRating: updatedReview?.rating,
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Updating the Review",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const deleteReview = async (req: Request, res: Response) => {
+  try {
+    const customerId = (req as any).user.id;
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
+
+    if (!reviewId) {
+      res.status(400).json({
+        message: "Review ID is required",
+        success: false,
+      });
+      return;
+    }
+
+    const customer = await customerRepository.findById(customerId);
+    if (!customer || !customer.isActive) {
+      res.status(customer ? 403 : 404).json({
+        message: customer ? "Account deactivated." : "Customer Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    const review = await reviewsRepository.findById(reviewIdValue);
+
+    if (!review) {
+      res.status(404).json({
+        message: "Review Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    // check if review belongs to this customer
+    if (review.customerId !== customerId) {
+      res.status(403).json({
+        message: "You are not authorized to delete this review",
+        success: false,
+      });
+      return;
+    }
+
+    // store provider ID before deleting
+    const providerId = review.serviceProviderId;
+    await reviewsRepository.delete(reviewIdValue);
+
+    // update provider's average rating and total reviews
+    const averageRating = await reviewsRepository.getAverageRating(providerId);
+    const totalReviews = await reviewsRepository.countByProvider(
+      providerId,
+      false,
+    );
+
+    await serviceProviderRepository.updateRatingStats(providerId, {
+      averageRating: averageRating.toString(),
+      totalReviews,
+    });
+
+    res.status(200).json({
+      message: "Review Deleted Successfully",
+      success: true,
+      data: {
+        deleteReviewId: reviewId,
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Deleting Review",
+      success: false,
+    });
+    return;
+  }
+};
+
+// provider functions
+
+export const respondToReview = async (req: Request, res: Response) => {
+  try {
+    const providerId = (req as any).user.id;
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
+    const { comment } = req.body;
+
+    if (!reviewId) {
+      res.status(400).json({
+        message: "Review Id is required",
+        success: false,
+      });
+      return;
+    }
+
+    if (!comment && comment.trim().length === 0) {
+      res.status(400).json({
+        message: "Comment is required.",
+        success: false,
+      });
+      return;
+    }
+
+    const provider = await serviceProviderRepository.findById(providerId);
+    if (!provider || !provider.isActive || provider.isSuspended) {
+      res.status(403).json({
+        message: !provider
+          ? "Provider Not Found"
+          : provider.isSuspended
+            ? `Account suspended. Reason: ${provider.suspensionReason}`
+            : "Account deactivated.",
+        success: false,
+      });
+      return;
+    }
+
+    // finding the review
+    const review = await reviewsRepository.findById(reviewIdValue);
+
+    if (!review) {
+      res.status(404).json({
+        message: "Review Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    if (review.serviceProviderId !== providerId) {
+      res.status(403).json({
+        message: "You are not authorized to respond to this review",
+        success: false,
+      });
+      return;
+    }
+
+    if (review.providerResponse?.comment) {
+      res.status(400).json({
+        message: "You have already responded to the review.",
+        success: false,
+      });
+      return;
+    }
+
+    // update the review with providers response
+    const updatedReview = await reviewsRepository.addProviderResponse(
+      reviewIdValue,
+      comment.trim(),
+    );
+
+    const customer = await customerRepository.findById(review.customerId);
+    let notificationSent = false
+
+    if (customer) {
+      const notificationResult = await handleReviewResponseNotification(
+        customer.id,
+        customer.name,
+        provider.id,
+        provider.name,
+        review.id,
+        comment.trim(),
+      );
+      notificationSent = notificationResult.success
+    }
+
+    res.status(200).json({
+      message: "Response Added Successfully.",
+      success: true,
+      data: {
+        review: {
+          id: updatedReview?.id,
+          providerResponse: updatedReview?.providerResponse,
+        },
+        customer: customer ? {
+          name: customer.name,
+          notified: notificationSent
+        } : null,
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Responding to Review",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getReviewsAboutMe = async (req: Request, res: Response) => {
+  try {
+    const providerId = (req as any).user.id;
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+    const rating = req.query.rating
+      ? parseInt(req.query.rating as string)
+      : undefined;
+
+    const provider = await serviceProviderRepository.findById(providerId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    if (rating && (rating < 1 || rating > 5)) {
+      res
+        .status(400)
+        .json({ message: "Rating must be between 1 and 5", success: false });
+      return;
+    }
+
+    const result = await reviewsRepository.findByProvider(
+      providerId,
+      { page, limit },
+      { rating, sortBy, order: (order as "asc") || "desc" },
+    );
+
+    const stats = await reviewsRepository.getProviderStats(providerId);
+
+    res.status(200).json({
+      message: `Reviews for ${provider.name}`,
+      success: true,
+      data: {
+        provider: {
+          id: provider.id,
+          name: provider.name,
+          averageRating: provider.averageRating,
+          ratingDistribution: stats.ratingDistribution,
+        },
+        reviews: result.reviews,
+        pagination: {
+          currentPage: page,
+          totalPages: result.totalPages,
+          totalReviews: result.total,
+          limit,
+          hasNext: page < result.totalPages,
+          hasPrev: page > 1,
+        },
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Reviews About Me",
+      success: false,
+    });
+    return;
+  }
+};
+
+// admin functions
+
+export const flagCustomerReview = async (req: Request, res: Response) => {
+  try {
+    const adminId = (req as any).user.id;
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
+    const { reason, hideReview } = req.body;
+
+    if (!reviewId) {
+      res.status(400).json({
+        message: "Review Id is required",
+        success: false,
+      });
+      return;
+    }
+
+    const review = await reviewsRepository.findById(reviewIdValue);
+
+    if (!review) {
+      res.status(404).json({
+        message: "Review not found!",
+        success: false,
+      });
+      return;
+    }
+
+    if (review.isFlagged) {
+      res.status(400).json({
+        message: "Review is already Flagged",
+        success: false,
+      });
+      return;
+    }
+
+    const updatedReview = await reviewsRepository.flagReview(
+      reviewIdValue,
+      reason,
+      hideReview,
+    );
+
+    res.status(200).json({
+      message: "Review Flagged Successfully!",
+      success: true,
+      data: {
+        review: {
+          id: updatedReview?.id,
+          isFlagged: updatedReview?.isFlagged,
+          isVisible: updatedReview?.isVisible,
+          flagReason: reason || "Not Specified",
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Flagging the Review",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const unFlagCustomerReview = async (req: Request, res: Response) => {
+  try {
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
+
+    if (!reviewId) {
+      res.status(400).json({
+        message: "Review Id is required.",
+        success: false,
+      });
+      return;
+    }
+
+    const review = await reviewsRepository.findById(reviewIdValue);
+    if (!review) {
+      res.status(404).json({
+        message: "Review not found !",
+        success: false,
+      });
+      return;
+    }
+
+    if (!review.isFlagged) {
+      res.status(400).json({
+        message: "Review is not flagged.",
+        success: false,
+      });
+      return;
+    }
+
+    const updatedReview = await reviewsRepository.unflagReview(reviewIdValue);
+
+    res.status(200).json({
+      message: "Review Un-Flagged Successfully!",
+      success: true,
+      data: {
+        review: {
+          id: updatedReview?.id,
+          isFlagged: updatedReview?.isFlagged,
+          isVisible: updatedReview?.isVisible,
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Un-Flagging the Review",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const toggleReviewVisibility = async (req: Request, res: Response) => {
+  try {
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
+    const { isVisible } = req.body;
+
+    if (!reviewId) {
+      res.status(400).json({
+        message: "Review Id is required!",
+        success: false,
+      });
+      return;
+    }
+
+    const updatedReview = await reviewsRepository.toggleVisibility(
+      reviewIdValue,
+      isVisible,
+    );
+
+    if (!updatedReview) {
+      res.status(404).json({
+        message: "Review not found !",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Review ${updatedReview?.isVisible ? "Visible" : "Hidden"} Successfully !`,
+      success: true,
+      data: {
+        review: {
+          id: updatedReview?.id,
+          isVisible: updatedReview?.isVisible,
+          isFlagged: updatedReview?.isFlagged,
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Toggling the visibility of Review",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getAllReviews = async (req: Request, res: Response) => {
+  try {
+    const adminId = (req as any).user.id;
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+
+    const rating = req.query.rating
+      ? parseInt(req.query.rating as string)
+      : undefined;
+    const isFlagged =
+      req.query.isFlagged === "true"
+        ? true
+        : req.query.isFlagged === "false"
+          ? false
+          : undefined;
+    const isVisible =
+      req.query.isVisible === "true"
+        ? true
+        : req.query.isVisible === "false"
+          ? false
+          : undefined;
+
+    const result = await reviewsRepository.findAll(
+      { page, limit },
+      {
+        rating,
+        isFlagged,
+        isVisible,
+        sortBy,
+        order: (order as "asc") || "desc",
+      },
+    );
+
+    const stats = await reviewsRepository.getOverallStats();
+
+    res.status(200).json({
+      message: "All Reviews Retrieved !",
+      success: true,
+      data: {
+        reviews: result.reviews,
+        statistics: {
+          totalReviews: stats.totalReviews,
+          flaggedReviews: stats.flaggedReviews,
+          hiddenReviews: stats.hiddenReviews,
+          ratingDistribution: stats.ratingDistribution,
+        },
+        pagination: {
+          currentPage: page,
+          totalPages: result.totalPages,
+          totalReviews: result.total,
+          limit,
+          hasNext: page < result.totalPages,
+          hasPrev: page > 1,
+        },
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching all Reviews",
+      success: false,
+    });
+    return;
+  }
+};
 
 // // general functions
 
-// export const getProviderReviews = async (req: Request, res: Response) => {
-//   try {
-//     const { providerId } = req.params;
+export const getProviderReviews = async (req: Request, res: Response) => {
+  try {
+    const { providerId } = req.params;
+    const providerIdValue = Array.isArray(providerId)
+      ? providerId[0]
+      : providerId;
 
-//     const page = parseInt(req.query.page as string) || 1;
-//     const limit = parseInt(req.query.limit as string) || 10;
-//     const skip = (page - 1) * limit;
-//     const sortBy = (req.query.sortBy as string) || "createdAt";
-//     const order = (req.query.order as string) || "desc";
-//     const rating = req.query.rating as string;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const sortBy = (req.query.sortBy as string) || "createdAt";
+    const order = (req.query.order as string) || "desc";
+    const rating = req.query.rating
+      ? parseInt(req.query.rating as string)
+      : undefined;
 
-//     if (!providerId) {
-//       res.status(400).json({
-//         message: "Provider ID is required",
-//         success: false,
-//       });
-//       return;
-//     }
+    if (!providerId) {
+      res.status(400).json({
+        message: "Provider ID is required",
+        success: false,
+      });
+      return;
+    }
 
-//     const provider = await ServiceProvider.findById(providerId);
-//     if (!provider) {
-//       res.status(404).json({
-//         message: "Service Provider Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
+    const provider = await serviceProviderRepository.findById(providerIdValue);
+    if (!provider || !provider.isActive || provider.isSuspended) {
+      res.status(404).json({
+        message: "Service Provider Not Found or unavailable",
+        success: false,
+      });
+      return;
+    }
 
-//     // build filter object
-//     const filter: any = {
-//       serviceProviderId: providerId,
-//       isVisible: true,
-//     };
+    if (rating && (rating < 1 || rating > 5)) {
+      res.status(400).json({
+        message: "Rating must be between 1 & 5",
+        success: false,
+      });
+      return;
+    }
 
-//     // filter by rating
-//     if (rating) {
-//       const ratingNum = parseInt(rating);
-//       if (ratingNum < 1 || ratingNum > 5) {
-//         res.status(400).json({
-//           message: "Rating must be between 1 & 5",
-//           success: false,
-//         });
-//         return;
-//       }
-//       filter.rating = ratingNum;
-//     }
+    const result = await reviewsRepository.findByProvider(
+      providerIdValue,
+      { page, limit },
+      { rating, sortBy, order: (order as "asc") || "desc" },
+    );
 
-//     // build sort obj
-//     const validSortFields = ["createdAt", "rating", "updatedAt"];
-//     const sortObj: any = {};
+    const stats = await reviewsRepository.getProviderStats(providerIdValue);
 
-//     if (validSortFields.includes(sortBy)) {
-//       sortObj[sortBy] = order === "asc" ? 1 : -1;
-//     } else {
-//       sortObj.createdAt = -1; // default sort
-//     }
+    res.status(200).json({
+      message: "Provider Reviews Retrieved Successfully",
+      success: true,
+      data: {
+        provider: {
+          id: provider.id,
+          name: provider.name,
+          averageRating: provider.averageRating,
+          totalReviews: provider.totalReviews,
+          ratingDistribution: stats.ratingDistribution,
+        },
+        reviews: result.reviews,
+        pagination: {
+          currentPage: page,
+          totalPages: result.totalPages,
+          totalReviews: result.total,
+          limit,
+          hasNext: page < result.totalPages,
+          hasPrev: page > 1,
+        },
+      },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Reviews of provider",
+      success: false,
+    });
+    return;
+  }
+};
 
-//     const reviews = await Reviews.find(filter)
-//       .populate("customerId", "name profilePicture")
-//       .populate("serviceRequestId", "serviceTitle serviceAddress")
-//       .sort(sortObj)
-//       .skip(skip)
-//       .limit(limit);
+export const getReviewById = async (req: Request, res: Response) => {
+  try {
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
 
-//     const totalReviews = await Reviews.countDocuments(filter);
+    if (!reviewId) {
+      res.status(400).json({
+        message: "Review Id is required",
+        success: false,
+      });
+      return;
+    }
 
-//     const ratingDistribution = await Reviews.aggregate([
-//       {
-//         $match: { serviceProviderId: provider._id, isVisible: true },
-//       },
-//       {
-//         $group: {
-//           _id: "$rating",
-//           count: { $sum: 1 },
-//         },
-//       },
-//     ]);
+    const review = await reviewsRepository.findById(reviewIdValue);
 
-//     const distribution = {
-//       5: 0,
-//       4: 0,
-//       3: 0,
-//       2: 0,
-//       1: 0,
-//     };
+    if (!review) {
+      res.status(404).json({
+        message: "Review Not Found",
+        success: false,
+      });
+      return;
+    }
 
-//     ratingDistribution.forEach((item: any) => {
-//       distribution[item._id as keyof typeof distribution] = item.count;
-//     });
+    if (!review.isVisible) {
+      res.status(400).json({
+        message: "The review is not available",
+        success: false,
+      });
+      return;
+    }
 
-//     res.status(200).json({
-//       message: "Provider Reviews Retrieved Successfully",
-//       success: true,
-//       data: {
-//         provider: {
-//           id: provider._id,
-//           name: provider.name,
-//           averageRating: provider.averageRating,
-//           totalReviews: provider.totalReviews,
-//           ratingDistribution: distribution,
-//         },
-//         reviews: reviews,
-//         pagination: {
-//           currentPage: page,
-//           totalPages: Math.ceil(totalReviews / limit),
-//           totalReviews,
-//           limit,
-//           hasNext: page < Math.ceil(totalReviews / limit),
-//           hasPrev: page > 1,
-//         },
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Fetching Reviews of provider",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
-
-// export const getReviewById = async (req: Request, res: Response) => {
-//   try {
-//     const { reviewId } = req.params;
-
-//     if (!reviewId) {
-//       res.status(400).json({
-//         message: "Review Id is required",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     const review = await Reviews.findById(reviewId)
-//       .populate("customerId", "name email profilePicture")
-//       .populate("serviceProviderId", "name email averageRating totalReviews")
-//       .populate("serviceRequestId", "serviceTitle serviceAddress status");
-
-//     if (!review) {
-//       res.status(404).json({
-//         message: "Review Not Found",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     if (!review.isVisible) {
-//       res.status(400).json({
-//         message: "The review is not available",
-//         success: false,
-//       });
-//       return;
-//     }
-
-//     res.status(200).json({
-//       message: "Review Retrieved Successfully",
-//       success: true,
-//       data: {
-//         review: review,
-//       },
-//     });
-//     return;
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({
-//       message: "Error Fetching Review By ID",
-//       success: false,
-//     });
-//     return;
-//   }
-// };
+    res.status(200).json({
+      message: "Review Retrieved Successfully",
+      success: true,
+      data: { review },
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Review By ID",
+      success: false,
+    });
+    return;
+  }
+};

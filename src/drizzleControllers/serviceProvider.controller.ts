@@ -616,7 +616,6 @@ export const toggleAvailability = async (req: Request, res: Response) => {
     res.status(200).json({
       message: `Availability updated to: ${status}`,
       success: true,
-      availabilityStatus: provider.availabilityStatus,
     });
     return;
   } catch (error) {
