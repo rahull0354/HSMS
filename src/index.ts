@@ -9,6 +9,7 @@ import serviceRequestRoutes from "#routes/serviceRequest.routes.js"
 import reviewRoutes from "#routes/review.route.js"
 
 import drizzleCustomerRoutes from "#drizzleRoutes/customer.routes.js"
+import drizzleServiceProviderRoutes from '#drizzleRoutes/serviceProvider.routes.js'
 
 const app = express()
 const port = process.env.port ?? "9000"
@@ -24,6 +25,7 @@ app.use("/reviews", reviewRoutes)
 
 // drizzle routes
 app.use("/customers", drizzleCustomerRoutes)
+app.use('/providers', drizzleServiceProviderRoutes)
 
 app.listen(port, () => {
     connectDB()

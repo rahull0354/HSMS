@@ -227,7 +227,7 @@ export const deactivateAccount = async (req: Request, res: Response) => {
     }
 
     // check for active services
-    const activeServicesCount = await serviceRequestRepository.countActiveServices(userId);
+    const activeServicesCount = await serviceRequestRepository.countActiveServicesForCustomer(userId);
 
     if (activeServicesCount > 0) {
       res.status(400).json({

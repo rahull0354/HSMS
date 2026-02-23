@@ -13,6 +13,21 @@ export class ServiceRequestRepository {
     return result[0] || null;
   }
 
+  async findByRequestIdAndCustomerId(reviewId: string, customerId: string) {
+    const result = await db
+      .select()
+      .from(serviceRequests)
+      .where(
+        and (
+          eq(serviceRequests.id, reviewId),
+          eq(serviceRequests.customerId, customerId)
+        )
+      )
+      .limit(1);
+
+    return result[0] || null;
+  }
+
   async create(data: NewServiceRequest) {
     const result = await db.insert(serviceRequests).values(data).returning();
 
@@ -420,13 +435,27 @@ export class ServiceRequestRepository {
   }
 
   // if customer have any active services before deactivating the account
-  async countActiveServices(customerId: string) {
+  async countActiveServicesForCustomer(customerId: string) {
     const result = await db
       .select({ count: sql<number>`count(*)` })
       .from(serviceRequests)
       .where(
         and(
           eq(serviceRequests.customerId, customerId),
+          inArray(serviceRequests.status, ["requested", "assigned", "in_progress"])
+        )
+      );
+
+    return Number(result[0]?.count || 0);
+  }
+
+  async countActiveServicesForProvider(serviceProviderId: string) {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.serviceProviderId, serviceProviderId),
           inArray(serviceRequests.status, ["requested", "assigned", "in_progress"])
         )
       );
