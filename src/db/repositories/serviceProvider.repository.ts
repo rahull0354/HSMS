@@ -177,6 +177,7 @@ export class ServiceProviderRepository {
 
   //   find by skills
   async findBySkill(skill: string) {
+    const skillValue = skill.toLowerCase();
     const result = await db
       .select()
       .from(serviceProviders)
@@ -184,7 +185,7 @@ export class ServiceProviderRepository {
         and(
           eq(serviceProviders.isActive, true),
           eq(serviceProviders.isSuspended, false),
-          sql`${serviceProviders.skills} @> ${sql`[${JSON.stringify(skill)}]::jsonb`}`,
+          sql`${serviceProviders.skills} @> ${sql.raw(`'["${skillValue}"]'::jsonb`)}`,
         ),
       );
 
@@ -210,24 +211,27 @@ export class ServiceProviderRepository {
       eq(serviceProviders.isSuspended, false),
     ];
 
-    // Filter by skill
+    // Filter by skill - use JSONB array contains operator
     if (filters.skill) {
+      const skillValue = filters.skill.trim().toLowerCase();
       conditions.push(
-        sql`${serviceProviders.skills} @> ${sql`[${JSON.stringify(filters.skill.trim().toLowerCase())}]::jsonb`}`,
+        sql`${serviceProviders.skills} @> ${sql.raw(`'["${skillValue}"]'::jsonb`)}`,
       );
     }
 
     // Filter by city in serviceArea
     if (filters.city) {
+      const cityValue = filters.city.trim().toLowerCase();
       conditions.push(
-        sql`${serviceProviders.serviceArea}->'cities' @> ${sql`[${JSON.stringify(filters.city.trim().toLowerCase())}]::jsonb`}`,
+        sql`${serviceProviders.serviceArea}->'cities' @> ${sql.raw(`'["${cityValue}"]'::jsonb`)}`,
       );
     }
 
     // Filter by area in serviceArea
     if (filters.area) {
+      const areaValue = filters.area.trim().toLowerCase();
       conditions.push(
-        sql`${serviceProviders.serviceArea}->'areas' @> ${sql`[${JSON.stringify(filters.area.trim().toLowerCase())}]::jsonb`}`,
+        sql`${serviceProviders.serviceArea}->'areas' @> ${sql.raw(`'["${areaValue}"]'::jsonb`)}`,
       );
     }
 

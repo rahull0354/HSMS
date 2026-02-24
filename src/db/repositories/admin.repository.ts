@@ -153,7 +153,7 @@ export class AdminRepository {
 
   async findProviderById(id: string) {
     const result = await db
-      .select()
+      .select({})
       .from(serviceProviders)
       .where(eq(serviceProviders.id, id))
       .limit(1);
@@ -271,6 +271,40 @@ export class AdminRepository {
     };
   }
 
+  async findProviderWithoutCreds(providerId: string) {
+    const result = await db
+      .select({
+        id: serviceProviders.id,
+        name: serviceProviders.name,
+        email: serviceProviders.email,
+        phone: serviceProviders.phone,
+        profilePicture: serviceProviders.profilePicture,
+        bio: serviceProviders.bio,
+        skills: serviceProviders.skills,
+        experienceYears: serviceProviders.experienceYears,
+        certifications: serviceProviders.certifications,
+        pricingType: serviceProviders.pricingType,
+        serviceArea: serviceProviders.serviceArea,
+        workingHours: serviceProviders.workingHours,
+        availabilityStatus: serviceProviders.availabilityStatus,
+        averageRating: serviceProviders.averageRating,
+        totalReviews: serviceProviders.totalReviews,
+        totalJobsCompleted: serviceProviders.totalJobsCompleted,
+        isActive: serviceProviders.isActive,
+        isSuspended: serviceProviders.isSuspended,
+        suspensionReason: serviceProviders.suspensionReason,
+        createdAt: serviceProviders.createdAt,
+        updatedAt: serviceProviders.updatedAt,
+        lastLogin: serviceProviders.lastLogin,
+        deactivatedAt: serviceProviders.deactivatedAt,
+      })
+      .from(serviceProviders)
+      .where(eq(serviceProviders.id, providerId))
+      .limit(1);
+
+    return result[0] || null;
+  }
+
   //   customer functions
   async findAllCustomers(
     filters?: {
@@ -332,6 +366,25 @@ export class AdminRepository {
     };
   }
 
+  async findCustomersWithoutCreds(customerId: string) {
+    const result = await db
+      .select({
+        id: customers.id,
+        name: customers.name,
+        email: customers.email,
+        phone: customers.phone,
+        profilePicture: customers.profilePicture,
+        isActive: customers.isActive,
+        createdAt: customers.createdAt,
+        updatedAt: customers.updatedAt,
+      })
+      .from(customers)
+      .where(eq(customers.id, customerId))
+      .limit(1);
+
+    return result[0] || null;
+  }
+
   async countCustomers(filters?: { isActive?: boolean }) {
     const conditions = [];
 
@@ -366,61 +419,70 @@ export class AdminRepository {
     endOfDay.setHours(23, 59, 59, 999);
 
     // customer statistics
-    const totalCustomers = await this.countCustomers()
-    const activeCustomers = await this.countCustomers({isActive: true})
-    const newCustomersToday = await this.countCustomersByDateRange(startOfDay, endOfDay)
+    const totalCustomers = await this.countCustomers();
+    const activeCustomers = await this.countCustomers({ isActive: true });
+    const newCustomersToday = await this.countCustomersByDateRange(
+      startOfDay,
+      endOfDay,
+    );
 
     // service provider statistics
-    const totalProviders = await this.countProviders()
-    const activeProviders = await this.countProviders({isActive: true})
-    const suspendedproviders = await this.countProviders({isSuspended: true})
-    const newProvidersToday = await this.countProvidersByDateRange(startOfDay, endOfDay)
+    const totalProviders = await this.countProviders();
+    const activeProviders = await this.countProviders({ isActive: true });
+    const suspendedproviders = await this.countProviders({ isSuspended: true });
+    const newProvidersToday = await this.countProvidersByDateRange(
+      startOfDay,
+      endOfDay,
+    );
 
     // service categories statistics
-    const totalCategories = await serviceCategory.countCategories()
-    const activeCategories = await serviceCategory.countCategories({isActive: true})
+    const totalCategories = await serviceCategory.countCategories();
+    const activeCategories = await serviceCategory.countCategories({
+      isActive: true,
+    });
 
     // service request statistics
-    const requestStats = await this.getRequestStats()
-    const totalRequests = requestStats.total
-    const activeRequests = requestStats.requested + requestStats.assigned + requestStats.inProgress
+    const requestStats = await this.getRequestStats();
+    const totalRequests = requestStats.total;
+    const activeRequests =
+      requestStats.requested + requestStats.assigned + requestStats.inProgress;
 
     // total new registrations today
-    const newRegistrationsToday = newCustomersToday + newProvidersToday
+    const newRegistrationsToday = newCustomersToday + newProvidersToday;
 
     return {
-        customers: {
-            total: totalCustomers,
-            active: activeCustomers,
-            inactive: totalCustomers - activeCustomers,
-            newToday: newCustomersToday
-        },
-        providers: {
-            total: totalProviders,
-            active: activeProviders,
-            suspended: suspendedproviders,
-            inactive: totalProviders - activeProviders,
-            newToday: newProvidersToday
-        },
-        categories: {
-            total: totalCategories,
-            active: activeCategories,
-            inactive: totalCategories - activeCategories
-        },
-        requests: {
-            total: totalRequests,
-            active: activeRequests,
-            requested: requestStats.requested,
-            assigned: requestStats.assigned,
-            inProgress: requestStats.inProgress,
-            completed: requestStats.completed,
-            cancelled: requestStats.cancelled,
-        },
-        overview: {
-            newRegistrationsToday,
-            activeRequests
-        }
-    }
+      customers: {
+        total: totalCustomers,
+        active: activeCustomers,
+        inactive: totalCustomers - activeCustomers,
+        newToday: newCustomersToday,
+      },
+      providers: {
+        total: totalProviders,
+        active: activeProviders,
+        suspended: suspendedproviders,
+        inactive: totalProviders - activeProviders,
+        newToday: newProvidersToday,
+      },
+      categories: {
+        total: totalCategories,
+        active: activeCategories,
+        inactive: totalCategories - activeCategories,
+      },
+      requests: {
+        total: totalRequests,
+        active: activeRequests,
+        requested: requestStats.requested,
+        assigned: requestStats.assigned,
+        inProgress: requestStats.inProgress,
+        completed: requestStats.completed,
+        cancelled: requestStats.cancelled,
+      },
+      overview: {
+        newRegistrationsToday,
+        activeRequests,
+      },
+    };
   }
 
   async countCustomersByDateRange(startDate: Date, endDate: Date) {
@@ -430,8 +492,8 @@ export class AdminRepository {
       .where(
         and(
           gte(customers.createdAt, startDate),
-          lte(customers.createdAt, endDate)
-        )
+          lte(customers.createdAt, endDate),
+        ),
       );
 
     return Number(result[0]?.count || 0);
@@ -444,8 +506,8 @@ export class AdminRepository {
       .where(
         and(
           gte(serviceProviders.createdAt, startDate),
-          lte(serviceProviders.createdAt, endDate)
-        )
+          lte(serviceProviders.createdAt, endDate),
+        ),
       );
 
     return Number(result[0]?.count || 0);
@@ -491,4 +553,4 @@ export class AdminRepository {
   }
 }
 
-export const adminRepository = new AdminRepository()
+export const adminRepository = new AdminRepository();

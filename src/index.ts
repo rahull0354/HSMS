@@ -10,6 +10,9 @@ import reviewRoutes from "#routes/review.route.js"
 
 import drizzleCustomerRoutes from "#drizzleRoutes/customer.routes.js"
 import drizzleServiceProviderRoutes from '#drizzleRoutes/serviceProvider.routes.js'
+import drizzleAdminRoutes from "#drizzleRoutes/admin.routes.js"
+import drizzleRequestRoutes from "#drizzleRoutes/serviceRequest.routes.js"
+import drizzleReviewRoutes from "#drizzleRoutes/reviews.routes.js"
 
 const app = express()
 const port = process.env.port ?? "9000"
@@ -26,6 +29,9 @@ app.use("/reviews", reviewRoutes)
 // drizzle routes
 app.use("/customers", drizzleCustomerRoutes)
 app.use('/providers', drizzleServiceProviderRoutes)
+app.use("/author", drizzleAdminRoutes)
+app.use("/request", drizzleRequestRoutes)
+app.use('/review', drizzleReviewRoutes)
 
 app.listen(port, () => {
     connectDB()

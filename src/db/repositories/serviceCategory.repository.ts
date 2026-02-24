@@ -149,4 +149,4 @@ export class ServiceCategoryRepository {
   }
 }
 
-export const serviceCategory = new ServiceCategoryRepository()
+export const serviceCategory = new ServiceCategoryRepository();

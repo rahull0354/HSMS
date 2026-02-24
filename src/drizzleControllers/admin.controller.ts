@@ -6,10 +6,9 @@ import {
   sendServiceProviderUnsuspensionMail,
 } from "#services/email.service.js";
 import { adminRepository } from "#db/repositories/admin.repository.js";
-import { serviceCategory, ServiceCategoryRepository } from "#db/repositories/serviceCategory.repository.js";
+import { serviceCategory } from "#db/repositories/serviceCategory.repository.js";
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
 import { serviceProviderRepository } from "#db/repositories/serviceProvider.repository.js";
-import { customerRepository } from "#db/repositories/customer.repository.js";
 
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -24,14 +23,14 @@ export const registerAdmin = async (req: Request, res: Response) => {
     }
 
     // Check if admin already exists (only one admin allowed for security)
-    const adminCount = await adminRepository.count();
-    if (adminCount > 0) {
-      res.status(403).json({
-        message: "Admin already exists. Only one admin account allowed.",
-        success: false,
-      });
-      return;
-    }
+    // const adminCount = await adminRepository.count();
+    // if (adminCount > 0) {
+    //   res.status(403).json({
+    //     message: "Admin already exists. Only one admin account allowed.",
+    //     success: false,
+    //   });
+    //   return;
+    // }
 
     const adminCheck = await adminRepository.findByEmail(email);
     if (adminCheck) {
@@ -134,7 +133,6 @@ export const loginAdmin = async (req: Request, res: Response) => {
         id: checkAdmin.id,
         name: checkAdmin.name,
         email: checkAdmin.email,
-        lastLogin: checkAdmin.lastLogin,
       },
       token,
     });
@@ -505,7 +503,6 @@ export const toggleCategoryStatus = async (req: Request, res: Response) => {
       data: {
         categoryId: updatedCategory?.id,
         name: updatedCategory?.name,
-        isActive: updatedCategory?.isActive,
       },
     });
     return;
@@ -635,7 +632,7 @@ export const getServiceProviderById = async (req: Request, res: Response) => {
       return;
     }
 
-    const provider = await serviceProviderRepository.findById(serviceProviderIdValue);
+    const provider = await adminRepository.findProviderWithoutCreds(serviceProviderIdValue);
     if (!provider) {
       res.status(404).json({
         message: "Service Provider Not Found",
@@ -850,7 +847,7 @@ export const getCustomerById = async (req: Request, res: Response) => {
       return;
     }
 
-    const customer = await customerRepository.findById(customerIdValue);
+    const customer = await adminRepository.findCustomersWithoutCreds(customerIdValue);
     if (!customer) {
       res.status(404).json({
         message: "Customer Doesn't Exist !",
