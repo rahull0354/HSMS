@@ -1,6 +1,7 @@
 import express from "express";
 import {
   deactivateAccount,
+  getProfileDetails,
   loginCustomer,
   registerCustomer,
   requestReactivation,
@@ -13,14 +14,8 @@ const router = express.Router();
 
 router.post("/register", registerCustomer);
 router.post("/login", loginCustomer);
-router.post(
-  "/request-reactivation",
-  requestReactivation,
-);
-router.get(
-  "/reactivate-account/:token",
-  verifyAndReactivateAccount,
-);
+router.post("/request-reactivation", requestReactivation);
+router.get("/reactivate-account/:token", verifyAndReactivateAccount);
 
 // auth protected rojutes
 router.put(
@@ -35,6 +30,6 @@ router.post(
   deactivateAccount,
 );
 
-
+router.get("/profile", drizzleAuthMiddleware(["customer"]), getProfileDetails);
 
 export default router;

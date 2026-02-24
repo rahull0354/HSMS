@@ -101,6 +101,92 @@ export class ServiceRequestRepository {
       .orderBy(desc(serviceRequests.createdAt));
   }
 
+  async findUnassignedRequestsWithPagination(
+    filters?: {
+      serviceCategoryIds?: string[];
+      cities?: string[];
+      status?: string;
+    },
+    pagination?: {
+      page?: number;
+      limit?: number;
+    },
+    sort?: {
+      field?: string;
+      order?: "asc" | "desc";
+    },
+  ) {
+    const conditions = [isNull(serviceRequests.serviceProviderId)];
+
+    if (filters?.serviceCategoryIds && filters.serviceCategoryIds.length > 0) {
+      conditions.push(
+        inArray(serviceRequests.serviceCategoryId, filters.serviceCategoryIds),
+      );
+    }
+
+    if (filters?.cities && filters.cities.length > 0) {
+      conditions.push(
+        inArray(sql`${serviceRequests.serviceAddress}->>'city'`, filters.cities),
+      );
+    }
+
+    if (filters?.status) {
+      conditions.push(eq(serviceRequests.status, filters.status));
+    }
+
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 10;
+    const offset = (page - 1) * limit;
+
+    // Determine sort field and order
+    const sortField = sort?.field || "createdAt";
+    const sortOrder = sort?.order || "desc";
+
+    let orderByClause;
+    switch (sortField) {
+      case "createdAt":
+        orderByClause =
+          sortOrder === "asc"
+            ? serviceRequests.createdAt
+            : desc(serviceRequests.createdAt);
+        break;
+      case "estimatedPrice":
+        orderByClause = sortOrder === "asc"
+          ? sql`CAST(${serviceRequests.estimatedPrice} AS FLOAT) ASC`
+          : sql`CAST(${serviceRequests.estimatedPrice} AS FLOAT) DESC`;
+        break;
+      case "serviceTitle":
+        orderByClause =
+          sortOrder === "asc"
+            ? serviceRequests.serviceTitle
+            : desc(serviceRequests.serviceTitle);
+        break;
+      default:
+        orderByClause = desc(serviceRequests.createdAt);
+    }
+
+    const requests = await db
+      .select()
+      .from(serviceRequests)
+      .where(and(...conditions))
+      .orderBy(orderByClause)
+      .limit(limit)
+      .offset(offset);
+
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(and(...conditions));
+
+    return {
+      requests,
+      total: Number(totalResult[0]?.count || 0),
+      page,
+      limit,
+      totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
+    };
+  }
+
   async findByStatus(status: string) {
     return await db
       .select()

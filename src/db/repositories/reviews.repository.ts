@@ -353,7 +353,13 @@ export class ReviewsRepository {
         )
       );
 
-    return Number(result[0]?.avgRating?.toFixed(2) || 0);
+    const avgRating = result[0]?.avgRating;
+    if (avgRating === null || avgRating === undefined) {
+      return 0;
+    }
+
+    // Convert to number and round to 2 decimal places
+    return Math.round(Number(avgRating) * 100) / 100;
   }
 
   async getRatingDistribution(providerId: string) {
@@ -531,7 +537,7 @@ export class ReviewsRepository {
       visibleReviews: Number(visibleReviews[0]?.count || 0),
       hiddenReviews: Number(hiddenReviews[0]?.count || 0),
       flaggedReviews: Number(flaggedReviews[0]?.count || 0),
-      averageRating: Number(averageRating[0]?.avg?.toFixed(2) || 0),
+      averageRating: averageRating[0]?.avg ? Math.round(Number(averageRating[0].avg) * 100) / 100 : 0,
       ratingDistribution: distribution,
     };
   }

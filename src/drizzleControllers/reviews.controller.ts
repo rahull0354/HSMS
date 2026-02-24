@@ -2,8 +2,7 @@ import { customerRepository } from "#db/repositories/customer.repository.js";
 import { reviewsRepository } from "#db/repositories/reviews.repository.js";
 import { serviceProviderRepository } from "#db/repositories/serviceProvider.repository.js";
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
-import { reviews } from "#db/schema.js";
-import { handleReviewResponseNotification } from "#services/notification.service.js";
+import { handleReviewResponseNotification } from "#drizzleServices/notification.service.js";
 import { Request, Response } from "express";
 
 // customer functions
@@ -49,7 +48,6 @@ export const createReview = async (req: Request, res: Response) => {
       return;
     }
 
-    // Use the new function to verify service request belongs to customer
     const serviceRequest =
       await serviceRequestRepository.findByRequestIdAndCustomerId(
         requestIdValue,
