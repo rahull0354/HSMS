@@ -19,9 +19,9 @@ export const sendCustomerReactivationMail = async (
 ) => {
   const transporter = createTransporter();
 
-  // Backend API URL - use environment variable or default to localhost
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:9000";
-  const reactivationLink = `${backendUrl}/customer/reactivate-account/${reactivationToken}`;
+  // Frontend URL - use environment variable or default to localhost
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const reactivationLink = `${frontendUrl}/customer/reactivate?token=${reactivationToken}`;
 
   const mailOptions = {
     from: `"HSMS" <${process.env.EMAIL_USER || "noreply@homeservice.com"}>`,
@@ -98,8 +98,8 @@ export const sendServiceProviderReactivationMail = async (
   const transporter = createTransporter();
 
   // Backend API URL - use environment variable or default to localhost
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:9000";
-  const reactivationLink = `${backendUrl}/serviceProvider/reactivate-account/${reactivationToken}`;
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3001";
+  const reactivationLink = `${frontendUrl}/serviceProvider/reactivate-account/${reactivationToken}`;
 
   const mailOptions = {
     from: `"HSMS" <${process.env.EMAIL_USER || "noreply@homeservice.com"}>`,

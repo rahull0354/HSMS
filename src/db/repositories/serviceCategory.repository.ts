@@ -84,6 +84,16 @@ export class ServiceCategoryRepository {
     return result[0] || null;
   }
 
+  async findCategoryBySlug(slug: string) {
+    const result = await db
+      .select()
+      .from(serviceCategories)
+      .where(eq(serviceCategories.slug, slug))
+      .limit(1);
+
+    return result[0] || null;
+  }
+
   async updateCategoryById(id: string, data: Partial<NewServiceCategory>) {
     const result = await db
       .update(serviceCategories)

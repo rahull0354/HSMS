@@ -9,6 +9,14 @@ import {
   verifyAndReactivateAccount,
 } from "../drizzleControllers/customer.controller.js";
 import { drizzleAuthMiddleware } from "#middlewares/drizzleAuth.middleware.js";
+import {
+  getNotifications,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+} from "#drizzleControllers/notification.controller.js";
 
 const router = express.Router();
 
@@ -31,5 +39,38 @@ router.post(
 );
 
 router.get("/profile", drizzleAuthMiddleware(["customer"]), getProfileDetails);
+
+
+// Notification routes
+router.get(
+  "/notifications",
+  drizzleAuthMiddleware(["customer"]),
+  getNotifications
+);
+router.patch(
+  "/notifications/:id/read",
+  drizzleAuthMiddleware(["customer"]),
+  markAsRead
+);
+router.patch(
+  "/notifications/read-all",
+  drizzleAuthMiddleware(["customer"]),
+  markAllAsRead
+);
+router.delete(
+  "/notifications/:id",
+  drizzleAuthMiddleware(["customer"]),
+  deleteNotification
+);
+router.get(
+  "/notifications/preferences",
+  drizzleAuthMiddleware(["customer"]),
+  getNotificationPreferences
+);
+router.put(
+  "/notifications/preferences",
+  drizzleAuthMiddleware(["customer"]),
+  updateNotificationPreferences
+);
 
 export default router;
