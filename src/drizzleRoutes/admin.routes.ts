@@ -5,6 +5,7 @@ import {
   getAllCustomers,
   getAllServiceProviders,
   getCategoryById,
+  getCategoryBySlug,
   getCustomerById,
   getDashboardStats,
   getProfile,
@@ -33,11 +34,20 @@ router.post(
   drizzleAuthMiddleware(["admin"]),
   createCategory,
 );
-router.get("/categories", drizzleAuthMiddleware(["admin"]), getAllCategories);
+router.get(
+  "/categories",
+  drizzleAuthMiddleware(["admin", "customer", "serviceProvider"]),
+  getAllCategories,
+);
 router.get(
   "/category/:categoryId",
   drizzleAuthMiddleware(["admin"]),
   getCategoryById,
+);
+router.get(
+  "/category/slug/:slug",
+  drizzleAuthMiddleware(["admin", "customer"]),
+  getCategoryBySlug,
 );
 router.put(
   "/category/update/:categoryId",

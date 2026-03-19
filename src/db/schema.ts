@@ -181,6 +181,7 @@ export const serviceRequests = pgTable(
     serviceType: varchar("service_type", { length: 255 }).notNull(),
     serviceTitle: varchar("service_title", { length: 500 }).notNull(),
     serviceDescription: text("service_description"),
+    additionalNotes: text("additional_notes"),
     schedule: jsonb("schedule")
       .$type<{
         date: Date;

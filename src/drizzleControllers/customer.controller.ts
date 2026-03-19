@@ -93,15 +93,6 @@ export const loginCustomer = async (req: Request, res: Response) => {
       return;
     }
 
-    // check if account is deactivated
-    if (!checkCustomer.isActive) {
-      res.status(403).json({
-        message: "Your account is deactivated. Please reactivate to continue.",
-        success: false,
-      });
-      return;
-    }
-
     // password matching
     const checkPassword = await bcrypt.compare(
       password,
@@ -136,6 +127,15 @@ export const loginCustomer = async (req: Request, res: Response) => {
         id: checkCustomer.id,
         name: checkCustomer.name,
         email: checkCustomer.email,
+        phone: checkCustomer.phone,
+        profilePicture: checkCustomer.profilePicture,
+        address: checkCustomer.address,
+        isActive: checkCustomer.isActive,
+        deactivatedAt: checkCustomer.deactivatedAt,
+        reactivationToken: checkCustomer.reactivationToken,
+        reactivationExpires: checkCustomer.reactivationExpires,
+        createdAt: checkCustomer.createdAt,
+        updatedAt: checkCustomer.updatedAt,
         lastLogin: checkCustomer.lastLogin,
       },
     });

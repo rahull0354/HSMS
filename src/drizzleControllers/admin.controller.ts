@@ -353,6 +353,44 @@ export const getCategoryById = async (req: Request, res: Response) => {
   }
 };
 
+export const getCategoryBySlug = async (req: Request, res: Response) => {
+  try {
+    const { slug } = req.params;
+    const slugValue = Array.isArray(slug) ? slug[0] : slug;
+
+    if (!slugValue) {
+      res.status(400).json({
+        message: "Slug not provided",
+        success: false,
+      });
+      return;
+    }
+
+    const category = await serviceCategory.findCategoryBySlug(slugValue);
+    if (!category) {
+      res.status(404).json({
+        message: "Category Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `${category.name} Details: `,
+      success: true,
+      data: category,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Category BY Slug",
+      success: false,
+    });
+    return;
+  }
+};
+
 export const updateCategory = async (req: Request, res: Response) => {
   try {
     const { categoryId } = req.params;
