@@ -1,7 +1,11 @@
 import {
   deactivateAccount,
   getAllServiceProviders,
+  getDashboardStats,
+  getMonthlyEarnings,
+  getMonthlyPerformance,
   getProfileDetails,
+  getProvidersByCategory,
   getPublicProfile,
   loginServiceProvider,
   registerServiceProvider,
@@ -24,6 +28,9 @@ router.get("/reactivate-account/:token", verifyAndReactivateAccount);
 router.get('/list', getAllServiceProviders)
 router.get("/list/profile/:serviceProviderId", getPublicProfile)
 router.get('/list/search', searchProviders)
+router.get('/by-category', getProvidersByCategory)
+
+router.get("/dashboard", drizzleAuthMiddleware(["serviceProvider"]), getDashboardStats);
 
 // // middleware protected routes
 router.put(
@@ -42,5 +49,9 @@ router.put(
   drizzleAuthMiddleware(["serviceProvider"]),
   toggleAvailability,
 );
+
+// Dashboard charts endpoints
+router.get("/dashboard/monthly-earnings", drizzleAuthMiddleware(["serviceProvider"]), getMonthlyEarnings);
+router.get("/dashboard/monthly-performance", drizzleAuthMiddleware(["serviceProvider"]), getMonthlyPerformance);
 
 export default router;

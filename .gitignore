@@ -26,3 +26,6 @@ dist-ssr
 .env
 
 docs/
+drizzle/
+db/migrate/
+src/db/migrate/
