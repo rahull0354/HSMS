@@ -84,6 +84,16 @@ export class ServiceCategoryRepository {
     return result[0] || null;
   }
 
+  async findById(id: string) {
+    const result = await db
+      .select()
+      .from(serviceCategories)
+      .where(eq(serviceCategories.id, id))
+      .limit(1);
+
+    return result[0] || null;
+  }
+
   async findCategoryBySlug(slug: string) {
     const result = await db
       .select()

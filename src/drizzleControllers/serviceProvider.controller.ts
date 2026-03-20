@@ -5,6 +5,8 @@ import crypto from "crypto";
 import { sendServiceProviderReactivationMail } from "#services/email.service.js";
 import { serviceProviderRepository } from "#db/repositories/serviceProvider.repository.js";
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
+import { reviewsRepository } from "#db/repositories/reviews.repository.js";
+import { serviceCategory } from "#db/repositories/serviceCategory.repository.js";
 
 export const registerServiceProvider = async (req: Request, res: Response) => {
   try {
@@ -177,6 +179,9 @@ export const updateServiceProviderDetails = async (
       experienceYears,
       certifications,
       pricingType,
+      baseRate,
+      rateUnit,
+      servicePricing,
       workingHours,
       serviceArea,
     } = req.body;
@@ -261,6 +266,52 @@ export const updateServiceProviderDetails = async (
       }
     }
 
+    // Handle baseRate - provider's base rate for services
+    if (baseRate !== undefined) {
+      const rate = parseFloat(baseRate);
+      if (!isNaN(rate) && rate >= 0) {
+        updateData.baseRate = rate;
+      } else {
+        res.status(400).json({
+          message: "Invalid base rate. Must be a non-negative number",
+          success: false,
+        });
+        return;
+      }
+    }
+
+    // Handle rateUnit - pricing unit (per-visit, per-hour, etc.)
+    if (rateUnit !== undefined) {
+      const validRateUnits = ["per-visit", "per-hour", "per-day", "per-job"];
+      if (validRateUnits.includes(rateUnit)) {
+        updateData.rateUnit = rateUnit;
+      } else {
+        res.status(400).json({
+          message: `Invalid rate unit. Must be one of: ${validRateUnits.join(", ")}`,
+          success: false,
+        });
+        return;
+      }
+    }
+
+    // Handle servicePricing - custom rates for specific service categories
+    if (servicePricing !== undefined && Array.isArray(servicePricing)) {
+      const validServicePricing = servicePricing
+        .filter((sp: any) => {
+          return sp.rate !== undefined && !isNaN(parseFloat(sp.rate));
+        })
+        .map((sp: any) => ({
+          serviceCategoryId: sp.serviceCategoryId || undefined,
+          rate: parseFloat(sp.rate),
+          minRate: sp.minRate !== undefined ? parseFloat(sp.minRate) : undefined,
+          maxRate: sp.maxRate !== undefined ? parseFloat(sp.maxRate) : undefined,
+        }));
+
+      if (validServicePricing.length > 0) {
+        updateData.servicePricing = validServicePricing;
+      }
+    }
+
     if (workingHours !== undefined) {
       const workingHoursObj: any = {};
 
@@ -284,22 +335,40 @@ export const updateServiceProviderDetails = async (
     }
 
     if (serviceArea !== undefined) {
-      const serviceAreaObj: any = {};
+      // Handle both old flat format and new nested format for backwards compatibility
+      if (Array.isArray(serviceArea)) {
+        // New format: Array of {city, areas}
+        const validServiceAreas = serviceArea
+          .filter((sa: any) => sa.city && typeof sa.city === "string")
+          .map((sa: any) => ({
+            city: sa.city.trim(),
+            areas: Array.isArray(sa.areas)
+              ? sa.areas.filter((area: any) => area && typeof area === "string").map((area: string) => area.trim())
+              : []
+          }));
 
-      if (serviceArea.cities && Array.isArray(serviceArea.cities)) {
-        serviceAreaObj.cities = serviceArea.cities
-          .filter((city: any) => city && typeof city === "string")
-          .map((city: string) => city.trim());
-      }
+        if (validServiceAreas.length > 0) {
+          updateData.serviceArea = validServiceAreas;
+        }
+      } else if (serviceArea.cities || serviceArea.areas) {
+        // Old format: {cities: [], areas: []} - for backwards compatibility
+        const serviceAreaObj: any = {};
 
-      if (serviceArea.areas && Array.isArray(serviceArea.areas)) {
-        serviceAreaObj.areas = serviceArea.areas
-          .filter((area: any) => area && typeof area === "string")
-          .map((area: string) => area.trim());
-      }
+        if (serviceArea.cities && Array.isArray(serviceArea.cities)) {
+          serviceAreaObj.cities = serviceArea.cities
+            .filter((city: any) => city && typeof city === "string")
+            .map((city: string) => city.trim());
+        }
 
-      if (Object.keys(serviceAreaObj).length > 0) {
-        updateData.serviceArea = serviceAreaObj;
+        if (serviceArea.areas && Array.isArray(serviceArea.areas)) {
+          serviceAreaObj.areas = serviceArea.areas
+            .filter((area: any) => area && typeof area === "string")
+            .map((area: string) => area.trim());
+        }
+
+        if (Object.keys(serviceAreaObj).length > 0) {
+          updateData.serviceArea = serviceAreaObj;
+        }
       }
     }
 
@@ -803,5 +872,294 @@ export const searchProviders = async (req: Request, res: Response) => {
       success: false,
     });
     return;
+  }
+};
+
+export const getDashboardStats = async (req: Request, res: Response) => {
+  try {
+    const serviceProviderId = (req as any).user.id;
+
+    const provider = await serviceProviderRepository.findById(serviceProviderId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Get all service requests for this provider
+    const allRequests = await serviceRequestRepository.findByProviderId(serviceProviderId);
+
+    // Count by status
+    const totalAssignments = allRequests.length;
+    const completedServices = allRequests.filter(r => r.status === 'completed').length;
+    const inProgressServices = allRequests.filter(r => r.status === 'in-progress').length;
+    const assignedServices = allRequests.filter(r => r.status === 'assigned').length;
+
+    // Calculate total earnings from completed services
+    const totalEarnings = allRequests
+      .filter(r => r.status === 'completed' && r.finalPrice)
+      .reduce((sum, r) => sum + Number(r.finalPrice || 0), 0);
+
+    // Get rating stats
+    const ratingStats = await reviewsRepository.getProviderStats(serviceProviderId);
+    const averageRating = ratingStats.averageRating || 0;
+
+    res.status(200).json({
+      message: "Dashboard stats retrieved successfully",
+      success: true,
+      data: {
+        totalAssignments,
+        completedServices,
+        inProgressServices,
+        assignedServices,
+        totalEarnings,
+        averageRating,
+        ratingDistribution: ratingStats.ratingDistribution || [],
+        isAvailable: provider.availabilityStatus === 'available',
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching dashboard stats:", error);
+    res.status(500).json({
+      message: "Error fetching dashboard stats",
+      success: false,
+    });
+  }
+};
+
+export const getMonthlyEarnings = async (req: Request, res: Response) => {
+  try {
+    const serviceProviderId = (req as any).user.id;
+    const months = parseInt(req.query.months as string) || 6;
+
+    const provider = await serviceProviderRepository.findById(serviceProviderId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Get completed services for this provider
+    const allRequests = await serviceRequestRepository.findByProviderId(serviceProviderId);
+    const completedRequests = allRequests.filter(r => r.status === 'completed' && r.completedAt);
+
+    // Group by month
+    const monthlyEarnings: { [key: string]: { month: string; earnings: number } } = {};
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    for (let i = months - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthName = monthNames[date.getMonth()];
+
+      monthlyEarnings[monthKey] = { month: monthName, earnings: 0 };
+    }
+
+    // Sum earnings by month
+    completedRequests.forEach(request => {
+      if (request.completedAt && request.finalPrice) {
+        const date = new Date(request.completedAt);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (monthlyEarnings[monthKey]) {
+          monthlyEarnings[monthKey].earnings += Number(request.finalPrice || 0);
+        }
+      }
+    });
+
+    const earningsData = Object.values(monthlyEarnings);
+
+    res.status(200).json({
+      message: "Monthly earnings retrieved successfully",
+      success: true,
+      data: earningsData,
+    });
+  } catch (error) {
+    console.error("Error fetching monthly earnings:", error);
+    res.status(500).json({
+      message: "Error fetching monthly earnings",
+      success: false,
+    });
+  }
+};
+
+export const getMonthlyPerformance = async (req: Request, res: Response) => {
+  try {
+    const serviceProviderId = (req as any).user.id;
+    const months = parseInt(req.query.months as string) || 6;
+
+    const provider = await serviceProviderRepository.findById(serviceProviderId);
+    if (!provider) {
+      res.status(404).json({
+        message: "Service Provider not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Get all service requests for this provider
+    const allRequests = await serviceRequestRepository.findByProviderId(serviceProviderId);
+    const completedRequests = allRequests.filter(r => r.status === 'completed' && r.completedAt);
+
+    // Group by month
+    const monthlyData: { [key: string]: { month: string; completed: number; earnings: number } } = {};
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    for (let i = months - 1; i >= 0; i--) {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthName = monthNames[date.getMonth()];
+
+      monthlyData[monthKey] = { month: monthName, completed: 0, earnings: 0 };
+    }
+
+    // Sum by month
+    completedRequests.forEach(request => {
+      if (request.completedAt) {
+        const date = new Date(request.completedAt);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (monthlyData[monthKey]) {
+          monthlyData[monthKey].completed += 1;
+          monthlyData[monthKey].earnings += Number(request.finalPrice || 0);
+        }
+      }
+    });
+
+    const performanceData = Object.values(monthlyData);
+
+    res.status(200).json({
+      message: "Monthly performance retrieved successfully",
+      success: true,
+      data: performanceData,
+    });
+  } catch (error) {
+    console.error("Error fetching monthly performance:", error);
+    res.status(500).json({
+      message: "Error fetching monthly performance",
+      success: false,
+    });
+  }
+};
+
+export const getProvidersByCategory = async (req: Request, res: Response) => {
+  try {
+    const { categoryId, city } = req.query;
+
+    if (!categoryId || typeof categoryId !== 'string') {
+      res.status(400).json({
+        message: "Category ID is required",
+        success: false,
+      });
+      return;
+    }
+
+
+    // Get category details to find required skills
+    const category = await serviceCategory.findById(categoryId);
+    if (!category) {
+      res.status(404).json({
+        message: "Service category not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Get all active providers
+    const allProviders = await serviceProviderRepository.findAll();
+
+    console.log('📊 Price Estimation Debug:');
+    console.log('  Category ID:', categoryId);
+    console.log('  Category:', category.name);
+    console.log('  Required Skills:', category.requiredSkills);
+    console.log('  Total providers in DB:', allProviders.length);
+    console.log('  City filter:', city || 'none');
+
+    // Filter providers who match the category requirements
+    const matchingProviders = allProviders.filter((provider: any) => {
+      // Provider must be active and not suspended
+      if (!provider.isActive || provider.isSuspended) {
+        return false;
+      }
+
+      // SKIP skill filtering for price estimation
+      // We want to show all available providers to customers, not filter by skills
+      // Skill matching will happen when providers actually accept requests
+      // This gives customers more options and realistic price ranges
+
+      // Filter by city if provided (only if customer has entered city)
+      if (city && typeof city === 'string' && city.trim() !== '' && provider.serviceArea) {
+        const cityLower = city.toLowerCase().trim();
+
+        // Handle both old flat format and new nested format
+        let servesCity = false;
+        if (Array.isArray(provider.serviceArea)) {
+          // New nested format: [{city, areas}]
+          servesCity = provider.serviceArea.some((sa: any) =>
+            sa.city && sa.city.toLowerCase().trim() === cityLower
+          );
+        } else if (provider.serviceArea.cities) {
+          // Old flat format: {cities: [], areas: []}
+          servesCity = provider.serviceArea.cities.some((c: string) =>
+            c.toLowerCase().trim() === cityLower
+          );
+        }
+
+        if (!servesCity) {
+          console.log(`  ❌ Filtered out ${provider.name} - doesn't serve city ${city}`);
+          return false;
+        }
+      }
+
+      console.log(`  ✓ Included ${provider.name} - rate: ${provider.baseRate}`);
+      return true;
+    });
+
+    console.log(`  Final matching providers: ${matchingProviders.length}`);
+
+    // Transform provider data for frontend
+    const providersData = matchingProviders.map((provider: any) => {
+      const rate = Number(provider.baseRate) || 0;
+      // Assign default rate of 400 if provider hasn't set their rate yet
+      const finalRate = rate > 0 ? rate : 400;
+
+      return {
+        id: provider.id,
+        name: provider.name,
+        baseRate: finalRate,
+        rateUnit: provider.rateUnit || provider.pricingType || 'per-visit',
+        rating: Number(provider.averageRating) || 0,
+        reviewCount: provider.totalReviews || 0,
+        completedJobs: provider.totalJobsCompleted || 0,
+        skills: provider.skills || [],
+        serviceArea: provider.serviceArea,
+        isAvailable: provider.availabilityStatus === 'available' || provider.isAvailable === true,
+      };
+    });
+
+    // Sort by rating and then by completed jobs
+    providersData.sort((a: any, b: any) => {
+      if (b.rating !== a.rating) {
+        return b.rating - a.rating; // Higher rating first
+      }
+      return b.completedJobs - a.completedJobs; // More jobs first
+    });
+
+    res.status(200).json({
+      message: "Providers retrieved successfully",
+      success: true,
+      data: providersData,
+      count: providersData.length,
+    });
+  } catch (error) {
+    console.error("Error fetching providers by category:", error);
+    res.status(500).json({
+      message: "Error fetching providers",
+      success: false,
+    });
   }
 };

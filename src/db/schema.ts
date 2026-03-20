@@ -93,6 +93,20 @@ export const serviceProviders = pgTable(
     pricingType: varchar("pricing_type", { length: 50 })
       .default("per-visit")
       .notNull(),
+    baseRate: decimal("base_rate", { precision: 10, scale: 2 })
+      .default("0")
+      .notNull(),
+    rateUnit: varchar("rate_unit", { length: 50 })
+      .default("per-visit")
+      .notNull(),
+    servicePricing: jsonb("service_pricing")
+      .$type<Array<{
+        serviceCategoryId?: string;
+        rate: number;
+        minRate?: number;
+        maxRate?: number;
+      }>>()
+      .default(sql`'[]'::jsonb`),
     availabilityStatus: varchar("availability_status", { length: 50 })
       .default("available")
       .notNull(),
@@ -101,10 +115,10 @@ export const serviceProviders = pgTable(
       to?: string;
       daysOff?: string[];
     }>(),
-    serviceArea: jsonb("service_area").$type<{
-      cities?: string[];
-      areas?: string[];
-    }>(),
+    serviceArea: jsonb("service_area").$type<Array<{
+      city: string;
+      areas: string[];
+    }>>(),
     averageRating: decimal("average_rating", { precision: 3, scale: 2 })
       .default("0")
       .notNull(),
@@ -141,6 +155,16 @@ export const serviceCategories = pgTable(
       max?: number;
       unit?: string;
     }>(),
+    adminCommission: jsonb("admin_commission")
+      .$type<{
+        type: "fixed" | "percentage" | "hybrid";
+        fixed?: number;
+        percentage?: number;
+        minCommission?: number;
+        maxCommission?: number;
+      }>()
+      .notNull()
+      .default(sql`'{"type": "fixed", "fixed": 0}'::jsonb`),
     commonServices: jsonb("common_services")
       .$type<
         Array<{
@@ -205,10 +229,20 @@ export const serviceRequests = pgTable(
     estimatedPrice: decimal("estimated_price", { precision: 10, scale: 2 }),
     finalPrice: decimal("final_price", { precision: 10, scale: 2 }),
     pricingDetails: jsonb("pricing_details").$type<{
-      baseCharge?: number;
+      // Provider's earnings
+      providerCharge: number;
+      // Admin's profit
+      adminCharge: number;
+      // Additional costs
       additionalCharge?: number;
-      breakdown?: string;
-    }>(),
+      additionalBreakdown?: string;
+      // Totals
+      subtotal?: number;
+      total?: number;
+      // Commission details
+      commissionRate?: number;
+      commissionType?: "fixed" | "percentage" | "hybrid";
+    }>().notNull().default(sql`'{"providerCharge": 0, "adminCharge": 0}'::jsonb`),
     paymentStatus: varchar("payment_status", { length: 50 })
       .default("pending")
       .notNull(),

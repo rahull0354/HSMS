@@ -13,6 +13,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       serviceCategoryId,
       serviceTitle,
       serviceDescription,
+      additionalNotes,
       schedule,
       serviceAddress,
       beforeImages,
@@ -107,10 +108,11 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       return;
     }
 
-    // calculating estimated price from category
+    // calculating estimated price based on provider rates and admin commission
     let finalEstimatedPrice = estimatedPrice || 0;
-    let selectedCommonService = null;
     let priceBreakdown = "";
+    let adminCommissionAmount = 0;
+    let providerRateAmount = 0;
 
     // check if a customer selected a common service from category
     if (
@@ -118,26 +120,91 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       category.commonServices &&
       category.commonServices.length > 0
     ) {
-      selectedCommonService = category.commonServices.find(
+      const selectedCommonService = category.commonServices.find(
         (service) =>
           service.name.toLowerCase() === commonServiceName.toLowerCase(),
       );
 
       if (selectedCommonService) {
-        finalEstimatedPrice = selectedCommonService.typicalPrice;
-        priceBreakdown = `Standard ${selectedCommonService.name} service (${selectedCommonService.duration})`;
+        // For common services, use the typical price + admin commission
+        providerRateAmount = selectedCommonService.typicalPrice;
+        adminCommissionAmount = calculateAdminCommissionFromCategory(
+          providerRateAmount,
+          category.adminCommission
+        );
+        finalEstimatedPrice = providerRateAmount + adminCommissionAmount;
+        priceBreakdown = `Standard ${selectedCommonService.name} service (${selectedCommonService.duration}) - Base: ₹${providerRateAmount} + Admin: ₹${adminCommissionAmount}`;
       }
     }
 
-    // if no common service selected, use category price range
-    if (!finalEstimatedPrice && category.priceRange) {
-      const minPrice = category.priceRange.min ?? 0;
-      const maxPrice = category.priceRange.max ?? 0;
-      const avgPrice = (minPrice + maxPrice) / 2;
-      finalEstimatedPrice = avgPrice;
-      priceBreakdown = `Estimated price based on ${category.name} category range (${minPrice} - ${maxPrice}${category.priceRange.unit || ""})`;
+    // if no common service selected, calculate based on available providers
+    if (!finalEstimatedPrice) {
+      // Get providers who match the category requirements
+      const matchingProviders = await getMatchingProviders(
+        category,
+        serviceAddress.city
+      );
+
+      // Calculate pricing using provider rates + admin commission
+      if (matchingProviders.length > 0) {
+        // Get provider rates for this category
+        const providerRates = matchingProviders.map((provider: any) => {
+          // Check if provider has specific pricing for this category
+          const specificPricing = provider.servicePricing?.find(
+            (p: any) => p.serviceCategoryId === category.id
+          );
+
+          if (specificPricing) {
+            return {
+              rate: specificPricing.rate,
+              minRate: specificPricing.minRate ?? specificPricing.rate,
+              maxRate: specificPricing.maxRate ?? specificPricing.rate,
+            };
+          }
+
+          // Use provider's base rate
+          const baseRate = parseFloat(provider.baseRate) || 0;
+          return {
+            rate: baseRate,
+            minRate: baseRate,
+            maxRate: baseRate,
+          };
+        });
+
+        // Calculate average provider rate
+        const avgProviderRate =
+          providerRates.reduce((sum: number, r: any) => sum + r.rate, 0) / providerRates.length;
+
+        const minProviderRate = Math.min(...providerRates.map((r: any) => r.minRate));
+        const maxProviderRate = Math.max(...providerRates.map((r: any) => r.maxRate));
+
+        // Calculate admin commission
+        adminCommissionAmount = calculateAdminCommissionFromCategory(
+          avgProviderRate,
+          category.adminCommission
+        );
+
+        providerRateAmount = avgProviderRate;
+        finalEstimatedPrice = avgProviderRate + adminCommissionAmount;
+        priceBreakdown = `Estimated price based on ${providerRates.length} provider(s) (₹${minProviderRate} - ₹${maxProviderRate}) + admin charges (₹${adminCommissionAmount})`;
+      } else {
+        // No providers available, use category average
+        const categoryMin = category.priceRange?.min ?? 0;
+        const categoryMax = category.priceRange?.max ?? 0;
+        const categoryAvg = categoryMin > 0 || categoryMax > 0 ? (categoryMin + categoryMax) / 2 : 0;
+
+        adminCommissionAmount = calculateAdminCommissionFromCategory(
+          categoryAvg,
+          category.adminCommission
+        );
+
+        providerRateAmount = categoryAvg;
+        finalEstimatedPrice = categoryAvg + adminCommissionAmount;
+        priceBreakdown = `Estimated price based on ${category.name} category range (₹${categoryMin} - ₹${categoryMax}) + admin charges (₹${adminCommissionAmount})`;
+      }
     }
 
+    // Check provider availability
     let hasAvailableProviders = false;
     let availableProvidersCount = 0;
 
@@ -159,6 +226,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       serviceCategoryId,
       serviceTitle: serviceTitle.trim(),
       serviceDescription: serviceDescription?.trim() || "",
+      additionalNotes: additionalNotes?.trim() || "",
       schedule: {
         date: scheduleDate,
         timeSlot: schedule.timeSlot,
@@ -176,10 +244,13 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       estimatedPrice: finalEstimatedPrice.toString(),
       finalPrice: "0",
       pricingDetails: {
-        baseCharge: finalEstimatedPrice,
-        additionalCharge: 0,
-        breakdown:
-          priceBreakdown || `Break service charge for ${category.name}`,
+        providerCharge: providerRateAmount,
+        adminCharge: adminCommissionAmount,
+        subtotal: providerRateAmount + adminCommissionAmount,
+        total: finalEstimatedPrice,
+        commissionRate: adminCommissionAmount,
+        commissionType: category.adminCommission?.type || 'fixed',
+        additionalBreakdown: priceBreakdown || `Service charge for ${category.name}`,
       },
       paymentStatus: "pending",
       paymentMethod: "",
@@ -211,7 +282,10 @@ export const createServiceRequest = async (req: Request, res: Response) => {
         },
         pricing: {
           estimatedPrice: finalEstimatedPrice,
+          providerRate: providerRateAmount,
+          adminCommission: adminCommissionAmount,
           breakdown: priceBreakdown,
+          commissionType: category.adminCommission?.type || 'fixed',
         },
         availability: {
           hasAvailableProviders,
@@ -842,9 +916,12 @@ export const getAvailableRequests = async (req: Request, res: Response) => {
       if (!category.requiredSkills || category.requiredSkills.length === 0)
         return false;
 
-      // check if any provider skill matches category's required skills
-      return provider.skills.some((skill) =>
-        category.requiredSkills!.includes(skill.toLowerCase()),
+      // check if any provider skill matches category's required skills (case-insensitive)
+      const providerSkillsLower = provider.skills.map((s) => s.toLowerCase());
+      const categorySkillsLower = category.requiredSkills.map((s: string) => s.toLowerCase());
+
+      return providerSkillsLower.some((skill) =>
+        categorySkillsLower.includes(skill),
       );
     });
 
@@ -868,9 +945,10 @@ export const getAvailableRequests = async (req: Request, res: Response) => {
         status: "requested"
     };
 
-    // filter by provider's service area
-    const providerCities = provider.serviceArea?.cities || [];
-    const providerAreas = provider.serviceArea?.areas || [];
+    // filter by provider's service area (nested structure)
+    const providerServiceAreas = provider.serviceArea || [];
+    const providerCities = providerServiceAreas.map((area: any) => area.city?.toLowerCase()).filter(Boolean);
+    const providerAreas = providerServiceAreas.flatMap((area: any) => area.areas || []).map((area: any) => area.toLowerCase());
 
     if (providerCities.length > 0 || providerAreas.length > 0) {
         const allserviceAreas = [...new Set([...providerCities, ...providerAreas])]
@@ -1534,3 +1612,94 @@ export const completeService = async (req: Request, res: Response) => {
     return;
   }
 };
+
+// Helper functions for pricing
+
+/**
+ * Get providers who match category requirements (skills and service area)
+ */
+async function getMatchingProviders(category: any, city: string) {
+  try {
+    const allProviders = await serviceProviderRepository.findAll();
+
+    return allProviders.filter((provider: any) => {
+      // Must be active and not suspended
+      if (!provider.isActive || provider.isSuspended) return false;
+
+      // Check skills match
+      if (!provider.skills || provider.skills.length === 0) return false;
+      if (!category.requiredSkills || category.requiredSkills.length === 0)
+        return false;
+
+      const providerSkillsLower = provider.skills.map((s: string) => s.toLowerCase());
+      const categorySkillsLower = category.requiredSkills.map((s: string) => s.toLowerCase());
+
+      const hasMatchingSkill = providerSkillsLower.some((skill: string) =>
+        categorySkillsLower.includes(skill)
+      );
+
+      if (!hasMatchingSkill) return false;
+
+      // Check service area (city must match)
+      if (!provider.serviceArea || provider.serviceArea.length === 0) return false;
+
+      const providerCities = provider.serviceArea
+        .map((area: any) => area.city?.toLowerCase())
+        .filter(Boolean);
+
+      return providerCities.includes(city.toLowerCase());
+    });
+  } catch (error) {
+    console.error('Error getting matching providers:', error);
+    return [];
+  }
+}
+
+/**
+ * Calculate admin commission from category settings
+ */
+function calculateAdminCommissionFromCategory(
+  providerRate: number,
+  adminCommission: any
+): number {
+  if (!adminCommission) return 0;
+
+  const type = adminCommission.type || 'fixed';
+  let adminCharge = 0;
+
+  switch (type) {
+    case 'percentage':
+      adminCharge = (providerRate * (adminCommission.percentage || 0)) / 100;
+      if (adminCommission.minCommission && adminCharge < adminCommission.minCommission) {
+        adminCharge = adminCommission.minCommission;
+      }
+      if (adminCommission.maxCommission && adminCharge > adminCommission.maxCommission) {
+        adminCharge = adminCommission.maxCommission;
+      }
+      break;
+
+    case 'fixed':
+      adminCharge = adminCommission.fixed || 0;
+      break;
+
+    case 'hybrid':
+      const fixedPart = adminCommission.fixed || 0;
+      const percentPart = adminCommission.percentage
+        ? (providerRate * adminCommission.percentage) / 100
+        : 0;
+      adminCharge = fixedPart + percentPart;
+
+      if (adminCommission.minCommission && adminCharge < adminCommission.minCommission) {
+        adminCharge = adminCommission.minCommission;
+      }
+      if (adminCommission.maxCommission && adminCharge > adminCommission.maxCommission) {
+        adminCharge = adminCommission.maxCommission;
+      }
+      break;
+
+    default:
+      adminCharge = 0;
+  }
+
+  return adminCharge;
+}
