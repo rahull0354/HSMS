@@ -10,9 +10,9 @@ import { serviceCategory } from "#db/repositories/serviceCategory.repository.js"
 
 export const registerServiceProvider = async (req: Request, res: Response) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone } = req.body;
 
-    if (!name || !email || !password) {
+    if (!name || !email || !password || !phone) {
       res.status(400).json({
         message: "Please input all required fields",
         success: false,
@@ -55,9 +55,8 @@ export const registerServiceProvider = async (req: Request, res: Response) => {
       name,
       email,
       password: hashedPassword,
+      phone
     });
-
-    console.log(serviceProvider);
 
     res.status(201).json({
       message: "Service Provider Registered !",
@@ -149,6 +148,17 @@ export const loginServiceProvider = async (req: Request, res: Response) => {
         id: checkServiceProvider.id,
         name: checkServiceProvider.name,
         email: checkServiceProvider.email,
+        phone: checkServiceProvider.phone,
+        profilePicture: checkServiceProvider.profilePicture,
+        isActive: checkServiceProvider.isActive,
+        deactivatedAt: checkServiceProvider.deactivatedAt,
+        reactivationToken: checkServiceProvider.reactivationToken,
+        reactivationExpires: checkServiceProvider.reactivationExpires,
+        isSuspended: checkServiceProvider.isSuspended,
+        availabilityStatus: checkServiceProvider.availabilityStatus,
+        createdAt: checkServiceProvider.createdAt,
+        updatedAt: checkServiceProvider.updatedAt,
+        lastLogin: checkServiceProvider.lastLogin,
       },
     });
     return;
@@ -677,6 +687,30 @@ export const toggleAvailability = async (req: Request, res: Response) => {
       return;
     }
 
+    // check if provider is currently busy - prevent manual status changes
+    if (provider.availabilityStatus === "busy") {
+      res.status(403).json({
+        message: "Cannot change availability while service is in progress. Complete the current service first.",
+        success: false,
+        isBusy: true,
+      });
+      return;
+    }
+
+    // check if provider has any active services (in_progress)
+    const { serviceRequestRepository } = await import("#db/repositories/serviceRequests.repository.js");
+    const activeServices = await serviceRequestRepository.findByStatusAndProviderId(serviceProviderId, "in_progress");
+
+    if (activeServices.length > 0) {
+      res.status(403).json({
+        message: `Cannot change availability. You have ${activeServices.length} service(s) in progress. Complete the service(s) first.`,
+        success: false,
+        hasActiveServices: true,
+        activeServiceCount: activeServices.length,
+      });
+      return;
+    }
+
     // updating the availability status
     await serviceProviderRepository.update(serviceProviderId, {
       availabilityStatus: status,
@@ -894,7 +928,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     // Count by status
     const totalAssignments = allRequests.length;
     const completedServices = allRequests.filter(r => r.status === 'completed').length;
-    const inProgressServices = allRequests.filter(r => r.status === 'in-progress').length;
+    const inProgressServices = allRequests.filter(r => r.status === 'in_progress').length;
     const assignedServices = allRequests.filter(r => r.status === 'assigned').length;
 
     // Calculate total earnings from completed services

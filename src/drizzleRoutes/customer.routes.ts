@@ -8,6 +8,7 @@ import {
   updateCustomerDetails,
   verifyAndReactivateAccount,
 } from "../drizzleControllers/customer.controller.js";
+import { getCustomerById } from "../drizzleControllers/admin.controller.js";
 import { drizzleAuthMiddleware } from "#middlewares/drizzleAuth.middleware.js";
 import {
   getNotifications,
@@ -40,8 +41,7 @@ router.post(
 
 router.get("/profile", drizzleAuthMiddleware(["customer"]), getProfileDetails);
 
-
-// Notification routes
+// Notification routes (must come before /:id route)
 router.get(
   "/notifications",
   drizzleAuthMiddleware(["customer"]),
@@ -72,5 +72,7 @@ router.put(
   drizzleAuthMiddleware(["customer"]),
   updateNotificationPreferences
 );
+
+router.get("/:id", drizzleAuthMiddleware(["serviceProvider", "admin"]), getCustomerById);
 
 export default router;

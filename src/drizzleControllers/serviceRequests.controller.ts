@@ -3,7 +3,12 @@ import { serviceProviderRepository } from "#db/repositories/serviceProvider.repo
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
 import { Request, Response } from "express";
 import { serviceCategory } from "#db/repositories/serviceCategory.repository.js";
-import { handleCancellationNotifications, handleRequestAcceptedNotifications, handleReschedulingNotifications } from "#drizzleServices/notification.service.js";
+import {
+  handleCancellationNotifications,
+  handleRequestAcceptedNotifications,
+  handleReschedulingNotifications,
+} from "#drizzleServices/notification.service.js";
+import { invoiceRepository } from "#db/repositories/invoice.repository.js";
 
 export const createServiceRequest = async (req: Request, res: Response) => {
   try {
@@ -130,7 +135,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
         providerRateAmount = selectedCommonService.typicalPrice;
         adminCommissionAmount = calculateAdminCommissionFromCategory(
           providerRateAmount,
-          category.adminCommission
+          category.adminCommission,
         );
         finalEstimatedPrice = providerRateAmount + adminCommissionAmount;
         priceBreakdown = `Standard ${selectedCommonService.name} service (${selectedCommonService.duration}) - Base: ₹${providerRateAmount} + Admin: ₹${adminCommissionAmount}`;
@@ -142,7 +147,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       // Get providers who match the category requirements
       const matchingProviders = await getMatchingProviders(
         category,
-        serviceAddress.city
+        serviceAddress.city,
       );
 
       // Calculate pricing using provider rates + admin commission
@@ -151,7 +156,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
         const providerRates = matchingProviders.map((provider: any) => {
           // Check if provider has specific pricing for this category
           const specificPricing = provider.servicePricing?.find(
-            (p: any) => p.serviceCategoryId === category.id
+            (p: any) => p.serviceCategoryId === category.id,
           );
 
           if (specificPricing) {
@@ -173,15 +178,20 @@ export const createServiceRequest = async (req: Request, res: Response) => {
 
         // Calculate average provider rate
         const avgProviderRate =
-          providerRates.reduce((sum: number, r: any) => sum + r.rate, 0) / providerRates.length;
+          providerRates.reduce((sum: number, r: any) => sum + r.rate, 0) /
+          providerRates.length;
 
-        const minProviderRate = Math.min(...providerRates.map((r: any) => r.minRate));
-        const maxProviderRate = Math.max(...providerRates.map((r: any) => r.maxRate));
+        const minProviderRate = Math.min(
+          ...providerRates.map((r: any) => r.minRate),
+        );
+        const maxProviderRate = Math.max(
+          ...providerRates.map((r: any) => r.maxRate),
+        );
 
         // Calculate admin commission
         adminCommissionAmount = calculateAdminCommissionFromCategory(
           avgProviderRate,
-          category.adminCommission
+          category.adminCommission,
         );
 
         providerRateAmount = avgProviderRate;
@@ -191,11 +201,14 @@ export const createServiceRequest = async (req: Request, res: Response) => {
         // No providers available, use category average
         const categoryMin = category.priceRange?.min ?? 0;
         const categoryMax = category.priceRange?.max ?? 0;
-        const categoryAvg = categoryMin > 0 || categoryMax > 0 ? (categoryMin + categoryMax) / 2 : 0;
+        const categoryAvg =
+          categoryMin > 0 || categoryMax > 0
+            ? (categoryMin + categoryMax) / 2
+            : 0;
 
         adminCommissionAmount = calculateAdminCommissionFromCategory(
           categoryAvg,
-          category.adminCommission
+          category.adminCommission,
         );
 
         providerRateAmount = categoryAvg;
@@ -246,11 +259,12 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       pricingDetails: {
         providerCharge: providerRateAmount,
         adminCharge: adminCommissionAmount,
-        subtotal: providerRateAmount + adminCommissionAmount,
+        subTotal: providerRateAmount + adminCommissionAmount,
         total: finalEstimatedPrice,
         commissionRate: adminCommissionAmount,
-        commissionType: category.adminCommission?.type || 'fixed',
-        additionalBreakdown: priceBreakdown || `Service charge for ${category.name}`,
+        commissionType: category.adminCommission?.type || "fixed",
+        additionalBreakdown:
+          priceBreakdown || `Service charge for ${category.name}`,
       },
       paymentStatus: "pending",
       paymentMethod: "",
@@ -285,7 +299,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
           providerRate: providerRateAmount,
           adminCommission: adminCommissionAmount,
           breakdown: priceBreakdown,
-          commissionType: category.adminCommission?.type || 'fixed',
+          commissionType: category.adminCommission?.type || "fixed",
         },
         availability: {
           hasAvailableProviders,
@@ -842,11 +856,13 @@ export const rescheduleServiceRequest = async (req: Request, res: Response) => {
         },
         timing: {
           daysUntilService: Math.ceil(
-            (newScheduleDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+            (newScheduleDate.getTime() - today.getTime()) /
+              (1000 * 60 * 60 * 24),
           ),
           isUrgent:
             Math.ceil(
-              (newScheduleDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+              (newScheduleDate.getTime() - today.getTime()) /
+                (1000 * 60 * 60 * 24),
             ) <= 2,
         },
         notifications: {
@@ -911,19 +927,23 @@ export const getAvailableRequests = async (req: Request, res: Response) => {
     });
 
     // filter categories that match provider's skills
-    const matchingCategories = allCategories.categories.filter((category: any) => {
-      if (!provider.skills || provider.skills.length === 0) return false;
-      if (!category.requiredSkills || category.requiredSkills.length === 0)
-        return false;
+    const matchingCategories = allCategories.categories.filter(
+      (category: any) => {
+        if (!provider.skills || provider.skills.length === 0) return false;
+        if (!category.requiredSkills || category.requiredSkills.length === 0)
+          return false;
 
-      // check if any provider skill matches category's required skills (case-insensitive)
-      const providerSkillsLower = provider.skills.map((s) => s.toLowerCase());
-      const categorySkillsLower = category.requiredSkills.map((s: string) => s.toLowerCase());
+        // check if any provider skill matches category's required skills (case-insensitive)
+        const providerSkillsLower = provider.skills.map((s) => s.toLowerCase());
+        const categorySkillsLower = category.requiredSkills.map((s: string) =>
+          s.toLowerCase(),
+        );
 
-      return providerSkillsLower.some((skill) =>
-        categorySkillsLower.includes(skill),
-      );
-    });
+        return providerSkillsLower.some((skill) =>
+          categorySkillsLower.includes(skill),
+        );
+      },
+    );
 
     const matchingCategoryIds = matchingCategories.map((cat: any) => cat.id);
 
@@ -941,31 +961,37 @@ export const getAvailableRequests = async (req: Request, res: Response) => {
       cities?: string[];
       status?: string;
     } = {
-        serviceCategoryIds: matchingCategoryIds,
-        status: "requested"
+      serviceCategoryIds: matchingCategoryIds,
+      status: "requested",
     };
 
     // filter by provider's service area (nested structure)
     const providerServiceAreas = provider.serviceArea || [];
-    const providerCities = providerServiceAreas.map((area: any) => area.city?.toLowerCase()).filter(Boolean);
-    const providerAreas = providerServiceAreas.flatMap((area: any) => area.areas || []).map((area: any) => area.toLowerCase());
+    const providerCities = providerServiceAreas
+      .map((area: any) => area.city?.toLowerCase())
+      .filter(Boolean);
+    const providerAreas = providerServiceAreas
+      .flatMap((area: any) => area.areas || [])
+      .map((area: any) => area.toLowerCase());
 
     if (providerCities.length > 0 || providerAreas.length > 0) {
-        const allserviceAreas = [...new Set([...providerCities, ...providerAreas])]
-        filters.cities = allserviceAreas
+      const allserviceAreas = [
+        ...new Set([...providerCities, ...providerAreas]),
+      ];
+      filters.cities = allserviceAreas;
     }
 
     // filter by city if provided
     if (city) {
-      filters.cities = [city]
+      filters.cities = [city];
     }
 
     // filter by skill category if provided
     if (skillCategory) {
       const category = await serviceCategory.findAllCategories();
       const filteredCategory = category.categories.find(
-        (cat: any) => cat.slug === skillCategory && cat.isActive
-      )
+        (cat: any) => cat.slug === skillCategory && cat.isActive,
+      );
       if (filteredCategory) {
         filters.serviceCategoryIds = [filteredCategory.id];
       } else {
@@ -977,39 +1003,46 @@ export const getAvailableRequests = async (req: Request, res: Response) => {
       }
     }
 
-    const result = await serviceRequestRepository.findUnassignedRequestsWithPagination(
+    const result =
+      await serviceRequestRepository.findUnassignedRequestsWithPagination(
         filters,
         { page, limit },
-        { field: sortBy, order: order as "asc" | "desc" }
-    )
+        { field: sortBy, order: order as "asc" | "desc" },
+      );
 
     // Enrich requests with category and customer details
     const enrichedRequests = await Promise.all(
-        result.requests.map(async (request) => {
-            // Get category details
-            const category = await serviceCategory.findCategoryById(request.serviceCategoryId)
+      result.requests.map(async (request) => {
+        // Get category details
+        const category = await serviceCategory.findCategoryById(
+          request.serviceCategoryId,
+        );
 
-            // Get customer details
-            const customer = await customerRepository.findById(request.customerId)
+        // Get customer details
+        const customer = await customerRepository.findById(request.customerId);
 
-            return {
-                ...request,
-                customerId: customer ? {
-                    id: customer.id,
-                    name: customer.name,
-                    email: customer.email,
-                    phone: customer.phone,
-                } : null,
-                serviceCategoryId: category ? {
-                    id: category.id,
-                    name: category.name,
-                    slug: category.slug,
-                    icon: category.icon,
-                    requiredSkills: category.requiredSkills,
-                } : null,
-            }
-        })
-    )
+        return {
+          ...request,
+          customerId: customer
+            ? {
+                id: customer.id,
+                name: customer.name,
+                email: customer.email,
+                phone: customer.phone,
+              }
+            : null,
+          serviceCategoryId: category
+            ? {
+                id: category.id,
+                name: category.name,
+                slug: category.slug,
+                icon: category.icon,
+                requiredSkills: category.requiredSkills,
+              }
+            : null,
+        };
+      }),
+    );
 
     res.status(200).json({
       message: "Available service requests retrieved",
@@ -1044,7 +1077,7 @@ export const acceptRequest = async (req: Request, res: Response) => {
   try {
     const providerId = (req as any).user.id;
     const { requestId } = req.params;
-    const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId
+    const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId;
 
     if (!requestId) {
       res.status(400).json({
@@ -1080,7 +1113,8 @@ export const acceptRequest = async (req: Request, res: Response) => {
       return;
     }
 
-    const serviceRequests = await serviceRequestRepository.findById(requestIdValue)
+    const serviceRequests =
+      await serviceRequestRepository.findById(requestIdValue);
 
     if (!serviceRequests) {
       res.status(404).json({
@@ -1137,7 +1171,9 @@ export const acceptRequest = async (req: Request, res: Response) => {
     );
 
     // Fetch customer for notification
-    const customer = await customerRepository.findById(serviceRequests.customerId);
+    const customer = await customerRepository.findById(
+      serviceRequests.customerId,
+    );
 
     const notificationResult = await handleRequestAcceptedNotifications(
       customer?.id || "",
@@ -1255,7 +1291,10 @@ export const getMyAssignedRequests = async (req: Request, res: Response) => {
       sort: { field: sortBy, order: order as "asc" | "desc" },
     });
 
-    const stats = await serviceRequestRepository.getStatusStatistics(providerId, "provider");
+    const stats = await serviceRequestRepository.getStatusStatistics(
+      providerId,
+      "provider",
+    );
 
     res.status(200).json({
       message: "Requests Retrieved: ",
@@ -1288,7 +1327,7 @@ export const startService = async (req: Request, res: Response) => {
   try {
     const providerId = (req as any).user.id;
     const { requestId } = req.params;
-    const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId
+    const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId;
 
     if (!requestId) {
       res.status(400).json({
@@ -1325,7 +1364,8 @@ export const startService = async (req: Request, res: Response) => {
     }
 
     // find the service request
-    const serviceRequest = await serviceRequestRepository.findById(requestIdValue);
+    const serviceRequest =
+      await serviceRequestRepository.findById(requestIdValue);
 
     if (!serviceRequest) {
       res.status(404).json({
@@ -1381,7 +1421,9 @@ export const startService = async (req: Request, res: Response) => {
 
     // Check if today is the scheduled date
     if (today.getTime() !== scheduledDate.getTime()) {
-      const daysDiff = Math.floor((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const daysDiff = Math.floor(
+        (scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
 
       if (daysDiff < 0) {
         res.status(400).json({
@@ -1435,12 +1477,20 @@ export const startService = async (req: Request, res: Response) => {
     }
 
     // updating the request
-    const updatedRequest = await serviceRequestRepository.updateStatus(requestIdValue, "in_progress");
+    const updatedRequest = await serviceRequestRepository.updateStatus(
+      requestIdValue,
+      "in_progress",
+    );
 
     await serviceRequestRepository.addStatusHistory(requestIdValue, {
       status: "in_progress",
       note: `Service started by ${provider.name}`,
       updatedBy: "service_provider",
+    });
+
+    // Set provider availability to busy when starting a service
+    await serviceProviderRepository.update(providerId, {
+      availabilityStatus: "busy",
     });
 
     res.status(200).json({
@@ -1455,6 +1505,7 @@ export const startService = async (req: Request, res: Response) => {
         },
         provider: {
           name: provider.name,
+          availabilityStatus: "busy",
         },
       },
     });
@@ -1474,7 +1525,8 @@ export const completeService = async (req: Request, res: Response) => {
     const providerId = (req as any).user.id;
     const { requestId } = req.params;
     const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId;
-    const { afterImages, finalPrice } = req.body;
+    const { afterImages, finalPrice, materialCost, materialDescription } =
+      req.body;
 
     if (!requestId) {
       res.status(400).json({
@@ -1511,7 +1563,8 @@ export const completeService = async (req: Request, res: Response) => {
     }
 
     // find the service request
-    const serviceRequest = await serviceRequestRepository.findById(requestIdValue);
+    const serviceRequest =
+      await serviceRequestRepository.findById(requestIdValue);
 
     if (!serviceRequest) {
       res.status(404).json({
@@ -1557,27 +1610,164 @@ export const completeService = async (req: Request, res: Response) => {
     }
 
     // Update service request status
-    const updatedRequest = await serviceRequestRepository.updateStatus(requestIdValue, "completed");
+    const updatedRequest = await serviceRequestRepository.updateStatus(
+      requestIdValue,
+      "completed",
+    );
 
     // Update after images if provided
     if (afterImages) {
-      await serviceRequestRepository.updateAfterImages(requestIdValue, afterImages);
+      await serviceRequestRepository.updateAfterImages(
+        requestIdValue,
+        afterImages,
+      );
     }
 
     // Update final price if provided
+    let finalPriceAmount = 0;
+    let materialCostAmount = 0;
+    let totalAmount = 0;
+
     if (finalPrice) {
-      await serviceRequestRepository.updateFinalPrice(requestIdValue, finalPrice);
+      finalPriceAmount = Number(finalPrice);
+      materialCostAmount = Number(materialCost) || 0;
+      totalAmount =
+        materialCostAmount > 0
+          ? finalPriceAmount + materialCostAmount
+          : finalPriceAmount;
+
+      await serviceRequestRepository.updateFinalPrice(
+        requestIdValue,
+        totalAmount,
+      );
+
+      // Update pricing details with material cost
+      if (materialCostAmount > 0) {
+        await serviceRequestRepository.update(serviceRequest.id, {
+          pricingDetails: {
+            ...(serviceRequest.pricingDetails || {}),
+            additionalCharge: materialCostAmount,
+            additionalBreakdown:
+              materialDescription || "Materials purchased by service provider",
+            subTotal: finalPriceAmount,
+            total: totalAmount,
+          },
+        });
+      }
+    } else {
+      // Use estimated price if no final price provided
+      finalPriceAmount = parseFloat(serviceRequest.estimatedPrice || "0");
+      totalAmount = finalPriceAmount;
     }
 
     // Add status history
+    const statusNote = `Service completed by ${provider.name}. Final price: ₹${finalPriceAmount}${materialCostAmount > 0 ? ` + Material cost: ₹${materialCostAmount} = Total: ₹${totalAmount.toFixed(2)}` : ""}`;
+
     await serviceRequestRepository.addStatusHistory(requestIdValue, {
       status: "completed",
-      note: `Service completed by ${provider.name}. Final price: ${finalPrice || serviceRequest.estimatedPrice}`,
+      note: statusNote,
       updatedBy: "service_provider",
     });
 
     // Increment provider's totalJobsCompleted
     await serviceProviderRepository.incrementJobsCompleted(providerId);
+
+    // Set provider availability back to available after completing a service
+    await serviceProviderRepository.update(providerId, {
+      availabilityStatus: "available",
+    });
+
+    // GENERATE INVOICE
+    let generatedInvoice = null;
+    try {
+      // Get pricing details from the service request
+      const pricingDetails = serviceRequest.pricingDetails || {};
+
+      // Use existing calculated values
+      const providerCharge = pricingDetails.providerCharge || 0;
+      const adminCharge = pricingDetails.adminCharge || 0;
+
+      // Calculate totals
+      const subTotal = totalAmount; // This is service price + material cost
+      const laborCost = providerCharge; // What provider earns for service
+
+      // Tax (18% GST on subtotal)
+      const taxRate = 18;
+      const taxAmount = (subTotal * taxRate) / 100;
+
+      // Use the actual admin charge from pricingDetails (not hardcoded 15%)
+      const platformFee = adminCharge;
+      const platformFeeRate = pricingDetails.commissionRate || 0;
+
+      // Provider earning = labor cost + material cost
+      // Note: Provider should be reimbursed for materials they purchased
+      const providerEarning = providerCharge + materialCostAmount;
+
+      const finalTotalWithTax = subTotal + taxAmount;
+
+      // Create line items
+      const lineItems = [
+        {
+          description: "Service charges",
+          quantity: 1,
+          unitPrice: providerCharge,
+          total: providerCharge,
+          itemType: "service",
+        },
+      ];
+
+      // Add platform fee as separate line item for transparency
+      if (adminCharge > 0) {
+        lineItems.push({
+          description: "Platform fee",
+          quantity: 1,
+          unitPrice: adminCharge,
+          total: adminCharge,
+          itemType: "additional_charge",
+        });
+      }
+
+      if (materialCostAmount > 0) {
+        lineItems.push({
+          description: materialDescription || "Material cost",
+          quantity: 1,
+          unitPrice: materialCostAmount,
+          total: materialCostAmount,
+          itemType: "material",
+        });
+      }
+
+      // Generate invoice
+      generatedInvoice = await invoiceRepository.createInvoice({
+        requestId: serviceRequest.id,
+        customerId: serviceRequest.customerId,
+        serviceProviderId: serviceRequest.serviceProviderId, 
+        subTotal,
+        materialCost: materialCostAmount,
+        laborCost: providerCharge,
+        taxAmount,
+        taxRate,
+        discountAmount: 0,
+        platformFeeRate,
+        platformFee: adminCharge,
+        providerEarning,
+        totalAmount: finalTotalWithTax,
+        lineItems,
+      });
+
+      // Link invoice to service request
+      await invoiceRepository.linkInvoiceToService(
+        serviceRequest.id,
+        generatedInvoice.id,
+      );
+
+      console.log(
+        "Invoice generated successfully:",
+        generatedInvoice.invoiceNumber,
+      );
+    } catch (invoiceError) {
+      console.error("Error generating invoice:", invoiceError);
+    }
 
     res.status(200).json({
       message: "Service Completed Successfully.",
@@ -1587,19 +1777,34 @@ export const completeService = async (req: Request, res: Response) => {
           id: updatedRequest?.id,
           serviceTitle: updatedRequest?.serviceTitle,
           status: "completed",
-          finalPrice: finalPrice || updatedRequest?.estimatedPrice,
+          finalPrice: totalAmount,
+          servicePrice: finalPriceAmount,
+          materialCost: materialCostAmount,
+          materialDescription: materialDescription || null,
           estimatedPrice: updatedRequest?.estimatedPrice,
           completedAt: updatedRequest?.completedAt,
           afterImages: afterImages || [],
+          invoiceId: generatedInvoice?.id,
+          invoiceNumber: generatedInvoice?.invoiceNumber,
         },
         provider: {
           name: provider.name,
+          availabilityStatus: "available",
         },
         pricing: {
           estimated: parseFloat(updatedRequest?.estimatedPrice || "0"),
-          final: parseFloat(finalPrice || updatedRequest?.estimatedPrice || "0"),
-          difference: parseFloat(finalPrice || updatedRequest?.estimatedPrice || "0") - parseFloat(updatedRequest?.estimatedPrice || "0"),
+          final: totalAmount,
+          difference:
+            totalAmount - parseFloat(updatedRequest?.estimatedPrice || "0"),
         },
+        invoice: generatedInvoice
+          ? {
+              id: generatedInvoice.id,
+              invoiceNumber: generatedInvoice.invoiceNumber,
+              totalAmount: generatedInvoice.totalAmount,
+              status: generatedInvoice.status,
+            }
+          : null,
       },
     });
     return;
@@ -1615,9 +1820,6 @@ export const completeService = async (req: Request, res: Response) => {
 
 // Helper functions for pricing
 
-/**
- * Get providers who match category requirements (skills and service area)
- */
 async function getMatchingProviders(category: any, city: string) {
   try {
     const allProviders = await serviceProviderRepository.findAll();
@@ -1631,17 +1833,22 @@ async function getMatchingProviders(category: any, city: string) {
       if (!category.requiredSkills || category.requiredSkills.length === 0)
         return false;
 
-      const providerSkillsLower = provider.skills.map((s: string) => s.toLowerCase());
-      const categorySkillsLower = category.requiredSkills.map((s: string) => s.toLowerCase());
+      const providerSkillsLower = provider.skills.map((s: string) =>
+        s.toLowerCase(),
+      );
+      const categorySkillsLower = category.requiredSkills.map((s: string) =>
+        s.toLowerCase(),
+      );
 
       const hasMatchingSkill = providerSkillsLower.some((skill: string) =>
-        categorySkillsLower.includes(skill)
+        categorySkillsLower.includes(skill),
       );
 
       if (!hasMatchingSkill) return false;
 
       // Check service area (city must match)
-      if (!provider.serviceArea || provider.serviceArea.length === 0) return false;
+      if (!provider.serviceArea || provider.serviceArea.length === 0)
+        return false;
 
       const providerCities = provider.serviceArea
         .map((area: any) => area.city?.toLowerCase())
@@ -1650,7 +1857,7 @@ async function getMatchingProviders(category: any, city: string) {
       return providerCities.includes(city.toLowerCase());
     });
   } catch (error) {
-    console.error('Error getting matching providers:', error);
+    console.error("Error getting matching providers:", error);
     return [];
   }
 }
@@ -1660,39 +1867,51 @@ async function getMatchingProviders(category: any, city: string) {
  */
 function calculateAdminCommissionFromCategory(
   providerRate: number,
-  adminCommission: any
+  adminCommission: any,
 ): number {
   if (!adminCommission) return 0;
 
-  const type = adminCommission.type || 'fixed';
+  const type = adminCommission.type || "fixed";
   let adminCharge = 0;
 
   switch (type) {
-    case 'percentage':
+    case "percentage":
       adminCharge = (providerRate * (adminCommission.percentage || 0)) / 100;
-      if (adminCommission.minCommission && adminCharge < adminCommission.minCommission) {
+      if (
+        adminCommission.minCommission &&
+        adminCharge < adminCommission.minCommission
+      ) {
         adminCharge = adminCommission.minCommission;
       }
-      if (adminCommission.maxCommission && adminCharge > adminCommission.maxCommission) {
+      if (
+        adminCommission.maxCommission &&
+        adminCharge > adminCommission.maxCommission
+      ) {
         adminCharge = adminCommission.maxCommission;
       }
       break;
 
-    case 'fixed':
+    case "fixed":
       adminCharge = adminCommission.fixed || 0;
       break;
 
-    case 'hybrid':
+    case "hybrid":
       const fixedPart = adminCommission.fixed || 0;
       const percentPart = adminCommission.percentage
         ? (providerRate * adminCommission.percentage) / 100
         : 0;
       adminCharge = fixedPart + percentPart;
 
-      if (adminCommission.minCommission && adminCharge < adminCommission.minCommission) {
+      if (
+        adminCommission.minCommission &&
+        adminCharge < adminCommission.minCommission
+      ) {
         adminCharge = adminCommission.minCommission;
       }
-      if (adminCommission.maxCommission && adminCharge > adminCommission.maxCommission) {
+      if (
+        adminCommission.maxCommission &&
+        adminCharge > adminCommission.maxCommission
+      ) {
         adminCharge = adminCommission.maxCommission;
       }
       break;

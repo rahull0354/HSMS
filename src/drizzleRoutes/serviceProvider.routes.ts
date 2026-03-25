@@ -17,6 +17,14 @@ import {
 } from "#drizzleControllers/serviceProvider.controller.js";
 import { drizzleAuthMiddleware } from "#middlewares/drizzleAuth.middleware.js";
 import express from "express";
+import {
+  getNotifications,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+} from "#drizzleControllers/notification.controller.js";
 
 const router = express.Router();
 
@@ -48,6 +56,38 @@ router.put(
   "/toggleAvailability",
   drizzleAuthMiddleware(["serviceProvider"]),
   toggleAvailability,
+);
+
+// Notification routes (must come before /:id route)
+router.get(
+  "/notifications",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  getNotifications
+);
+router.patch(
+  "/notifications/:id/read",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  markAsRead
+);
+router.patch(
+  "/notifications/read-all",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  markAllAsRead
+);
+router.delete(
+  "/notifications/:id",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  deleteNotification
+);
+router.get(
+  "/notifications/preferences",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  getNotificationPreferences
+);
+router.put(
+  "/notifications/preferences",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  updateNotificationPreferences
 );
 
 // Dashboard charts endpoints
