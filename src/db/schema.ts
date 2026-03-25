@@ -33,8 +33,12 @@ export const customers = pgTable(
     deactivatedAt: timestamp("deactivated_at"),
     reactivationToken: varchar("reactivation_token", { length: 255 }),
     reactivationExpires: timestamp("reactivation_expires"),
-    createdAt: timestamp("created_at", {withTimezone: true}).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", {withTimezone: true}).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => ({
     emailIdx: index("customers_email_idx").on(table.email),
@@ -52,8 +56,12 @@ export const admins = pgTable(
     email: varchar("email", { length: 255 }).notNull().unique(),
     password: varchar("password", { length: 255 }).notNull(),
     lastLogin: timestamp("last_login"),
-    createdAt: timestamp("created_at", {withTimezone: true}).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", {withTimezone: true}).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => ({
     emailIdx: index("admins_email_idx").on(table.email),
@@ -77,9 +85,7 @@ export const serviceProviders = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
-    experienceYears: integer("experience_years")
-      .default(0)
-      .notNull(),
+    experienceYears: integer("experience_years").default(0).notNull(),
     certifications: jsonb("certifications")
       .$type<
         Array<{
@@ -100,12 +106,14 @@ export const serviceProviders = pgTable(
       .default("per-visit")
       .notNull(),
     servicePricing: jsonb("service_pricing")
-      .$type<Array<{
-        serviceCategoryId?: string;
-        rate: number;
-        minRate?: number;
-        maxRate?: number;
-      }>>()
+      .$type<
+        Array<{
+          serviceCategoryId?: string;
+          rate: number;
+          minRate?: number;
+          maxRate?: number;
+        }>
+      >()
       .default(sql`'[]'::jsonb`),
     availabilityStatus: varchar("availability_status", { length: 50 })
       .default("available")
@@ -115,10 +123,12 @@ export const serviceProviders = pgTable(
       to?: string;
       daysOff?: string[];
     }>(),
-    serviceArea: jsonb("service_area").$type<Array<{
-      city: string;
-      areas: string[];
-    }>>(),
+    serviceArea: jsonb("service_area").$type<
+      Array<{
+        city: string;
+        areas: string[];
+      }>
+    >(),
     averageRating: decimal("average_rating", { precision: 3, scale: 2 })
       .default("0")
       .notNull(),
@@ -131,8 +141,12 @@ export const serviceProviders = pgTable(
     deactivatedAt: timestamp("deactivated_at"),
     reactivationToken: varchar("reactivation_token", { length: 255 }),
     reactivationExpires: timestamp("reactivation_expires"),
-    createdAt: timestamp("created_at", {withTimezone: true}).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", {withTimezone: true}).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => ({
     emailIdx: index("service_providers_email_idx").on(table.email),
@@ -178,8 +192,12 @@ export const serviceCategories = pgTable(
       .$type<string[]>()
       .default(sql`'[]'::jsonb`),
     isActive: boolean("is_active").default(true).notNull(),
-    createdAt: timestamp("created_at", {withTimezone: true}).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", {withTimezone: true}).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => ({
     nameIdx: index("service_categories_name_idx").on(table.name),
@@ -197,8 +215,10 @@ export const serviceRequests = pgTable(
     customerId: uuid("customer_id")
       .notNull()
       .references(() => customers.id, { onDelete: "restrict" }),
-    serviceProviderId: uuid("service_provider_id")
-      .references(() => serviceProviders.id, { onDelete: "set null" }),
+    serviceProviderId: uuid("service_provider_id").references(
+      () => serviceProviders.id,
+      { onDelete: "set null" },
+    ),
     serviceCategoryId: uuid("service_category_id")
       .notNull()
       .references(() => serviceCategories.id, { onDelete: "restrict" }),
@@ -228,21 +248,24 @@ export const serviceRequests = pgTable(
       .default(sql`'[]'::jsonb`),
     estimatedPrice: decimal("estimated_price", { precision: 10, scale: 2 }),
     finalPrice: decimal("final_price", { precision: 10, scale: 2 }),
-    pricingDetails: jsonb("pricing_details").$type<{
-      // Provider's earnings
-      providerCharge: number;
-      // Admin's profit
-      adminCharge: number;
-      // Additional costs
-      additionalCharge?: number;
-      additionalBreakdown?: string;
-      // Totals
-      subtotal?: number;
-      total?: number;
-      // Commission details
-      commissionRate?: number;
-      commissionType?: "fixed" | "percentage" | "hybrid";
-    }>().notNull().default(sql`'{"providerCharge": 0, "adminCharge": 0}'::jsonb`),
+    pricingDetails: jsonb("pricing_details")
+      .$type<{
+        // Provider's earnings
+        providerCharge: number;
+        // Admin's profit
+        adminCharge: number;
+        // Additional costs
+        additionalCharge?: number;
+        additionalBreakdown?: string;
+        // Totals
+        subTotal?: number;
+        total?: number;
+        // Commission details
+        commissionRate?: number;
+        commissionType?: "fixed" | "percentage" | "hybrid";
+      }>()
+      .notNull()
+      .default(sql`'{"providerCharge": 0, "adminCharge": 0}'::jsonb`),
     paymentStatus: varchar("payment_status", { length: 50 })
       .default("pending")
       .notNull(),
@@ -272,8 +295,13 @@ export const serviceRequests = pgTable(
       { onDelete: "set null" },
     ),
     completedAt: timestamp("completed_at"),
-    createdAt: timestamp("created_at", {withTimezone: true}).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", {withTimezone: true}).defaultNow().notNull(),
+    invoiceId: varchar("invoice_id", { length: 100 }).unique(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => ({
     customerIdx: index("service_requests_customer_idx").on(table.customerId),
@@ -316,8 +344,12 @@ export const reviews = pgTable(
     isVisible: boolean("is_visible").default(true).notNull(),
     isFlagged: boolean("is_flagged").default(false).notNull(),
     flagReason: text("flag_reason"),
-    createdAt: timestamp("created_at", {withTimezone: true}).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", {withTimezone: true}).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => ({
     serviceRequestIdx: index("reviews_service_request_idx").on(
@@ -333,23 +365,134 @@ export const reviews = pgTable(
 // Type for creating new reviews
 export type NewReview = typeof reviews.$inferInsert;
 
-export const notifications = pgTable('notifications', {
+export const notifications = pgTable(
+  "notifications",
+  {
     id: uuid("id").defaultRandom().primaryKey(),
-    recipientId: uuid('recipient_id').notNull(),
-    recipientType: varchar('recipient_type', {length: 50}).notNull(),
-    type: varchar('type', {length: 100}).notNull(),
-    title: varchar('title', {length: 500}).notNull(),
-    message: text('message').notNull(),
-    requestId: uuid('request_id').references(() => serviceRequests.id, {onDelete: 'cascade'}),
-    isRead: boolean('is_read').default(false).notNull(),
-    readAt: timestamp('read_at'),
-    createdAt: timestamp("created_at", {withTimezone: true}).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", {withTimezone: true}).defaultNow().notNull(),
-}, (table) => ({
-    recipientIdx: index('notifications_recipient_idx').on(table.recipientId),
-    recipientTypeIdx: index('notifications_recipient_type_idx').on(table.recipientType),
-    isReadIdx: index('notifications_is_read_idx').on(table.isRead)
-}))
+    recipientId: uuid("recipient_id").notNull(),
+    recipientType: varchar("recipient_type", { length: 50 }).notNull(),
+    type: varchar("type", { length: 100 }).notNull(),
+    title: varchar("title", { length: 500 }).notNull(),
+    message: text("message").notNull(),
+    requestId: uuid("request_id").references(() => serviceRequests.id, {
+      onDelete: "cascade",
+    }),
+    isRead: boolean("is_read").default(false).notNull(),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    recipientIdx: index("notifications_recipient_idx").on(table.recipientId),
+    recipientTypeIdx: index("notifications_recipient_type_idx").on(
+      table.recipientType,
+    ),
+    isReadIdx: index("notifications_is_read_idx").on(table.isRead),
+  }),
+);
 
 // Type for creating new notifications
 export type NewNotification = typeof notifications.$inferInsert;
+
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    invoiceNumber: varchar("invoice_number", { length: 100 })
+      .notNull()
+      .unique(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => serviceRequests.id, { onDelete: "restrict" }),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "restrict" }),
+    serviceProviderId: uuid("service_provider_id")
+      .notNull()
+      .references(() => serviceProviders.id, { onDelete: "restrict" }),
+    subTotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+    materialCost: decimal("material_cost", { precision: 10, scale: 2 })
+      .default("0")
+      .notNull(),
+    laborCost: decimal("labor_cost", { precision: 10, scale: 2 }).notNull(),
+    taxAmount: decimal("tax_amount", { precision: 10, scale: 2 })
+      .default("0")
+      .notNull(),
+    taxRate: decimal("tax_rate", { precision: 5, scale: 2 })
+      .default("0")
+      .notNull(),
+    discountAmount: decimal("discount_amount", { precision: 10, scale: 2 })
+      .default("0")
+      .notNull(),
+    platformFeeRate: decimal("platform_fee_rate", { precision: 5, scale: 2 })
+      .default("0.15")
+      .notNull(),
+    platformFee: decimal("platform_fee", { precision: 10, scale: 2 })
+      .default("0")
+      .notNull(),
+    providerEarning: decimal("provider_earning", {
+      precision: 10,
+      scale: 2,
+    }).notNull(),
+    totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+    status: varchar("status", { length: 20 }).default("pending").notNull(),
+    invoiceDate: timestamp("invoice_date", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    dueDate: timestamp("due_date", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    paymentMethod: varchar("payment_method", { length: 50 }),
+    paymentId: varchar("payment_id", { length: 255 }),
+    transactionId: varchar("transaction_id", { length: 255 }),
+    notes: text("notes"),
+    terms: text("terms"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    invoiceNumberIdx: index("invoices_invoice_number_idx").on(
+      table.invoiceNumber,
+    ),
+    requestIdIdx: index("invoices_request_id_idx").on(table.requestId),
+    customerIdIdx: index("invoices_customer_id_idx").on(table.customerId),
+    serviceProviderIdIdx: index("invoices_service_provider_id_idx").on(
+      table.customerId,
+    ),
+    statusIdx: index("invoices_status_idx").on(table.status),
+  }),
+);
+
+export type NewInvoice = typeof invoices.$inferInsert;
+
+export const invoiceLineItems = pgTable(
+  "invoice_line_items",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    description: varchar("description", { length: 255 }).notNull(),
+    quantity: integer("quantity").default(1).notNull(),
+    unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
+    total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+    itemType: varchar("item_type", { length: 50 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    invoiceIdIdx: index("invoice_line_items_invoice_id_idx").on(
+      table.invoiceId,
+    ),
+  }),
+);
+
+export type NewInvoiceLineItem = typeof invoiceLineItems.$inferInsert;

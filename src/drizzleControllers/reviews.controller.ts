@@ -230,6 +230,34 @@ export const getMyReviews = async (req: Request, res: Response) => {
       distribution[review.rating as keyof typeof distribution]++;
     });
 
+    // Populate provider and service request data for each review
+    const populatedReviews = await Promise.all(
+      result.reviews.map(async (review: any) => {
+        const provider = await serviceProviderRepository.findById(review.serviceProviderId);
+        const serviceRequest = await serviceRequestRepository.findById(review.serviceRequestId);
+
+        return {
+          ...review,
+          customer: customer ? {
+            id: customer.id,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+          } : null,
+          serviceRequest: serviceRequest ? {
+            id: serviceRequest.id,
+            title: serviceRequest.serviceTitle,
+            serviceType: serviceRequest.serviceType,
+            description: serviceRequest.serviceDescription,
+          } : null,
+          provider: provider ? {
+            id: provider.id,
+            name: provider.name,
+          } : null,
+        };
+      })
+    );
+
     res.status(200).json({
       message: "Reviews Retrieved Successfully",
       success: true,
@@ -240,7 +268,7 @@ export const getMyReviews = async (req: Request, res: Response) => {
           totalReviews: result.total,
           ratingDistribution: distribution,
         },
-        reviews: result.reviews,
+        reviews: populatedReviews,
         pagination: {
           currentPage: page,
           totalPages: result.totalPages,
@@ -404,6 +432,10 @@ export const deleteReview = async (req: Request, res: Response) => {
     const { reviewId } = req.params;
     const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
 
+    console.log('[DELETE REVIEW] Starting deletion process');
+    console.log('[DELETE REVIEW] Customer ID:', customerId);
+    console.log('[DELETE REVIEW] Review ID:', reviewIdValue);
+
     if (!reviewId) {
       res.status(400).json({
         message: "Review ID is required",
@@ -421,7 +453,10 @@ export const deleteReview = async (req: Request, res: Response) => {
       return;
     }
 
+    console.log('[DELETE REVIEW] Customer validated:', customer.id);
+
     const review = await reviewsRepository.findById(reviewIdValue);
+    console.log('[DELETE REVIEW] Found review:', review ? review.id : 'NOT FOUND');
 
     if (!review) {
       res.status(404).json({
@@ -433,6 +468,7 @@ export const deleteReview = async (req: Request, res: Response) => {
 
     // check if review belongs to this customer
     if (review.customerId !== customerId) {
+      console.log('[DELETE REVIEW] Authorization failed. Review customer:', review.customerId, 'Requesting customer:', customerId);
       res.status(403).json({
         message: "You are not authorized to delete this review",
         success: false,
@@ -440,11 +476,23 @@ export const deleteReview = async (req: Request, res: Response) => {
       return;
     }
 
+    console.log('[DELETE REVIEW] Authorization confirmed');
+
     // store provider ID before deleting
     const providerId = review.serviceProviderId;
-    await reviewsRepository.delete(reviewIdValue);
+    console.log('[DELETE REVIEW] Calling repository delete...');
+
+    const deletedReview = await reviewsRepository.delete(reviewIdValue);
+    console.log('[DELETE REVIEW] Repository delete result:', deletedReview);
+
+    if (!deletedReview) {
+      console.log('[DELETE REVIEW] WARNING: Delete returned null/undefined');
+    } else {
+      console.log('[DELETE REVIEW] Successfully deleted review:', deletedReview.id);
+    }
 
     // update provider's average rating and total reviews
+    console.log('[DELETE REVIEW] Updating provider stats...');
     const averageRating = await reviewsRepository.getAverageRating(providerId);
     const totalReviews = await reviewsRepository.countByProvider(
       providerId,
@@ -456,6 +504,8 @@ export const deleteReview = async (req: Request, res: Response) => {
       totalReviews,
     });
 
+    console.log('[DELETE REVIEW] Provider stats updated');
+
     res.status(200).json({
       message: "Review Deleted Successfully",
       success: true,
@@ -465,10 +515,11 @@ export const deleteReview = async (req: Request, res: Response) => {
     });
     return;
   } catch (error) {
-    console.error(error);
+    console.error('[DELETE REVIEW] Error during deletion:', error);
     res.status(500).json({
       message: "Error Deleting Review",
       success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
     return;
   }
@@ -622,6 +673,34 @@ export const getReviewsAboutMe = async (req: Request, res: Response) => {
 
     const stats = await reviewsRepository.getProviderStats(providerId);
 
+    // Populate customer data for each review
+    const populatedReviews = await Promise.all(
+      result.reviews.map(async (review: any) => {
+        const customer = await customerRepository.findById(review.customerId);
+        const serviceRequest = await serviceRequestRepository.findById(review.serviceRequestId);
+
+        return {
+          ...review,
+          customer: customer ? {
+            id: customer.id,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+          } : null,
+          serviceRequest: serviceRequest ? {
+            id: serviceRequest.id,
+            title: serviceRequest.serviceTitle,
+            serviceType: serviceRequest.serviceType,
+            description: serviceRequest.serviceDescription,
+          } : null,
+          provider: provider ? {
+            id: provider.id,
+            name: provider.name,
+          } : null,
+        };
+      })
+    );
+
     res.status(200).json({
       message: `Reviews for ${provider.name}`,
       success: true,
@@ -632,7 +711,7 @@ export const getReviewsAboutMe = async (req: Request, res: Response) => {
           averageRating: provider.averageRating,
           ratingDistribution: stats.ratingDistribution,
         },
-        reviews: result.reviews,
+        reviews: populatedReviews,
         pagination: {
           currentPage: page,
           totalPages: result.totalPages,
@@ -939,6 +1018,34 @@ export const getProviderReviews = async (req: Request, res: Response) => {
 
     const stats = await reviewsRepository.getProviderStats(providerIdValue);
 
+    // Populate customer data for each review
+    const populatedReviews = await Promise.all(
+      result.reviews.map(async (review: any) => {
+        const customer = await customerRepository.findById(review.customerId);
+        const serviceRequest = await serviceRequestRepository.findById(review.serviceRequestId);
+
+        return {
+          ...review,
+          customer: customer ? {
+            id: customer.id,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+          } : null,
+          serviceRequest: serviceRequest ? {
+            id: serviceRequest.id,
+            title: serviceRequest.serviceTitle,
+            serviceType: serviceRequest.serviceType,
+            description: serviceRequest.serviceDescription,
+          } : null,
+          provider: provider ? {
+            id: provider.id,
+            name: provider.name,
+          } : null,
+        };
+      })
+    );
+
     res.status(200).json({
       message: "Provider Reviews Retrieved Successfully",
       success: true,
@@ -950,7 +1057,7 @@ export const getProviderReviews = async (req: Request, res: Response) => {
           totalReviews: provider.totalReviews,
           ratingDistribution: stats.ratingDistribution,
         },
-        reviews: result.reviews,
+        reviews: populatedReviews,
         pagination: {
           currentPage: page,
           totalPages: result.totalPages,
@@ -1003,10 +1110,36 @@ export const getReviewById = async (req: Request, res: Response) => {
       return;
     }
 
+    // Fetch related data
+    const customer = await customerRepository.findById(review.customerId);
+    const serviceRequest = await serviceRequestRepository.findById(review.serviceRequestId);
+    const serviceProvider = await serviceProviderRepository.findById(review.serviceProviderId);
+
+    // Populate the review with related data
+    const populatedReview = {
+      ...review,
+      customer: customer ? {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+      } : null,
+      serviceRequest: serviceRequest ? {
+        id: serviceRequest.id,
+        title: serviceRequest.serviceTitle,
+        serviceType: serviceRequest.serviceType,
+        description: serviceRequest.serviceDescription,
+      } : null,
+      provider: serviceProvider ? {
+        id: serviceProvider.id,
+        name: serviceProvider.name,
+      } : null,
+    };
+
     res.status(200).json({
       message: "Review Retrieved Successfully",
       success: true,
-      data: { review },
+      data: { review: populatedReview },
     });
     return;
   } catch (error) {

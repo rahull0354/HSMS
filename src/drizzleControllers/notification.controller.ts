@@ -1,15 +1,23 @@
 import { Request, Response } from "express";
 import { notificationRepository } from "#db/repositories/notification.repository.js";
 
-// Get all notifications for the authenticated customer
+// Helper function to get recipient type from user role
+const getRecipientType = (role: string): "customer" | "serviceProvider" => {
+  return role === "serviceProvider" ? "serviceProvider" : "customer";
+};
+
+// Get all notifications for the authenticated user
 export const getNotifications = async (req: Request, res: Response) => {
   try {
-    const customerId = (req as any).user?.id;
-    if (!customerId) {
+    const userId = (req as any).user?.id;
+    const userRole = (req as any).user?.role;
+
+    if (!userId || !userRole) {
       res.status(401).json({ message: "User not authenticated" });
       return;
     }
 
+    const recipientType = getRecipientType(userRole);
     const unreadOnly = req.query.unreadOnly === "true";
     const page = req.query.page ? Number(req.query.page) : 1;
     const limit = req.query.limit ? Number(req.query.limit) : 10;
@@ -17,21 +25,21 @@ export const getNotifications = async (req: Request, res: Response) => {
     let result;
     if (unreadOnly) {
       result = await notificationRepository.findUnreadByRecipientId(
-        customerId,
-        "customer",
+        userId,
+        recipientType,
         { page, limit }
       );
     } else {
       result = await notificationRepository.findByRecipientId(
-        customerId,
-        "customer",
+        userId,
+        recipientType,
         { page, limit }
       );
     }
 
     const unreadCount = await notificationRepository.countUnreadByRecipient(
-      customerId,
-      "customer"
+      userId,
+      recipientType
     );
 
     res.status(200).json({
@@ -52,9 +60,9 @@ export const getNotifications = async (req: Request, res: Response) => {
 export const markAsRead = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const customerId = (req as any).user?.id;
+    const userId = (req as any).user?.id;
 
-    if (!customerId) {
+    if (!userId) {
       res.status(401).json({ message: "User not authenticated" });
       return;
     }
@@ -71,7 +79,7 @@ export const markAsRead = async (req: Request, res: Response) => {
       return;
     }
 
-    if (notification.recipientId !== customerId) {
+    if (notification.recipientId !== userId) {
       res.status(403).json({ message: "Access denied" });
       return;
     }
@@ -91,16 +99,19 @@ export const markAsRead = async (req: Request, res: Response) => {
 // Mark all notifications as read
 export const markAllAsRead = async (req: Request, res: Response) => {
   try {
-    const customerId = (req as any).user?.id;
+    const userId = (req as any).user?.id;
+    const userRole = (req as any).user?.role;
 
-    if (!customerId) {
+    if (!userId || !userRole) {
       res.status(401).json({ message: "User not authenticated" });
       return;
     }
 
+    const recipientType = getRecipientType(userRole);
+
     const updatedCount = await notificationRepository.markAllAsRead(
-      customerId,
-      "customer"
+      userId,
+      recipientType
     );
 
     res.status(200).json({
@@ -117,9 +128,9 @@ export const markAllAsRead = async (req: Request, res: Response) => {
 export const deleteNotification = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const customerId = (req as any).user?.id;
+    const userId = (req as any).user?.id;
 
-    if (!customerId) {
+    if (!userId) {
       res.status(401).json({ message: "User not authenticated" });
       return;
     }
@@ -136,7 +147,7 @@ export const deleteNotification = async (req: Request, res: Response) => {
       return;
     }
 
-    if (notification.recipientId !== customerId) {
+    if (notification.recipientId !== userId) {
       res.status(403).json({ message: "Access denied" });
       return;
     }
@@ -153,9 +164,9 @@ export const deleteNotification = async (req: Request, res: Response) => {
 // Get notification preferences (stub for now - can be expanded later)
 export const getNotificationPreferences = async (req: Request, res: Response) => {
   try {
-    const customerId = (req as any).user?.id;
+    const userId = (req as any).user?.id;
 
-    if (!customerId) {
+    if (!userId) {
       res.status(401).json({ message: "User not authenticated" });
       return;
     }
@@ -179,9 +190,9 @@ export const getNotificationPreferences = async (req: Request, res: Response) =>
 // Update notification preferences (stub for now - can be expanded later)
 export const updateNotificationPreferences = async (req: Request, res: Response) => {
   try {
-    const customerId = (req as any).user?.id;
+    const userId = (req as any).user?.id;
 
-    if (!customerId) {
+    if (!userId) {
       res.status(401).json({ message: "User not authenticated" });
       return;
     }

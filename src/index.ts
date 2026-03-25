@@ -14,11 +14,11 @@ import drizzleServiceProviderRoutes from "#drizzleRoutes/serviceProvider.routes.
 import drizzleAdminRoutes from "#drizzleRoutes/admin.routes.js";
 import drizzleRequestRoutes from "#drizzleRoutes/serviceRequest.routes.js";
 import drizzleReviewRoutes from "#drizzleRoutes/reviews.routes.js";
+import drizzleInvoiceRoutes from "#drizzleRoutes/invoice.routes.js";
 
 const app = express();
 const port = process.env.port ?? "9000";
 
-// ✅ CORRECT CORS configuration
 const corsOptions = {
   origin: ["http://localhost:3000",],
   credentials: true,
@@ -42,6 +42,7 @@ app.use("/providers", drizzleServiceProviderRoutes);
 app.use("/author", drizzleAdminRoutes);
 app.use("/request", drizzleRequestRoutes);
 app.use("/review", drizzleReviewRoutes);
+app.use("/invoices", drizzleInvoiceRoutes);
 
 app.listen(port, () => {
 //   connectDB();

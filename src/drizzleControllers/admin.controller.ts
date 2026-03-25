@@ -874,10 +874,10 @@ export const getAllCustomers = async (req: Request, res: Response) => {
 
 export const getCustomerById = async (req: Request, res: Response) => {
   try {
-    const { customerId } = req.params;
-    const customerIdValue = Array.isArray(customerId) ? customerId[0] : customerId
+    const { id } = req.params;
+    const idValue = Array.isArray(id) ? id[0] : id
 
-    if (!customerId) {
+    if (!id) {
       res.status(400).json({
         message: "Customer Id not provided",
         success: false,
@@ -885,7 +885,7 @@ export const getCustomerById = async (req: Request, res: Response) => {
       return;
     }
 
-    const customer = await adminRepository.findCustomersWithoutCreds(customerIdValue);
+    const customer = await adminRepository.findCustomersWithoutCreds(idValue);
     if (!customer) {
       res.status(404).json({
         message: "Customer Doesn't Exist !",
