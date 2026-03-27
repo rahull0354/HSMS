@@ -542,7 +542,7 @@ export const respondToReview = async (req: Request, res: Response) => {
       return;
     }
 
-    if (!comment && comment.trim().length === 0) {
+    if (!comment || comment.trim().length === 0) {
       res.status(400).json({
         message: "Comment is required.",
         success: false,

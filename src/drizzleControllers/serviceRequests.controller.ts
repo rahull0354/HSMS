@@ -1623,45 +1623,41 @@ export const completeService = async (req: Request, res: Response) => {
       );
     }
 
-    // Update final price if provided
+    // Update final price and material cost SEPARATELY
     let finalPriceAmount = 0;
     let materialCostAmount = 0;
     let totalAmount = 0;
 
+    // Always extract material cost, even if no final price is provided
+    materialCostAmount = Number(materialCost) || 0;
+
     if (finalPrice) {
       finalPriceAmount = Number(finalPrice);
-      materialCostAmount = Number(materialCost) || 0;
-      totalAmount =
-        materialCostAmount > 0
-          ? finalPriceAmount + materialCostAmount
-          : finalPriceAmount;
 
+      // Store final price WITHOUT material cost
       await serviceRequestRepository.updateFinalPrice(
         requestIdValue,
-        totalAmount,
+        finalPriceAmount,
       );
 
-      // Update pricing details with material cost
-      if (materialCostAmount > 0) {
-        await serviceRequestRepository.update(serviceRequest.id, {
-          pricingDetails: {
-            ...(serviceRequest.pricingDetails || {}),
-            additionalCharge: materialCostAmount,
-            additionalBreakdown:
-              materialDescription || "Materials purchased by service provider",
-            subTotal: finalPriceAmount,
-            total: totalAmount,
-          },
-        });
-      }
+      // Calculate total amount for invoice (service price + material cost)
+      totalAmount = finalPriceAmount + materialCostAmount;
     } else {
       // Use estimated price if no final price provided
       finalPriceAmount = parseFloat(serviceRequest.estimatedPrice || "0");
-      totalAmount = finalPriceAmount;
+      totalAmount = finalPriceAmount + materialCostAmount;
+    }
+
+    // Store material cost separately in its own column (always, if provided)
+    if (materialCostAmount > 0) {
+      await serviceRequestRepository.update(serviceRequest.id, {
+        materialCost: materialCostAmount.toString(),
+        materialDescription: materialDescription || "Materials purchased by service provider",
+      });
     }
 
     // Add status history
-    const statusNote = `Service completed by ${provider.name}. Final price: ₹${finalPriceAmount}${materialCostAmount > 0 ? ` + Material cost: ₹${materialCostAmount} = Total: ₹${totalAmount.toFixed(2)}` : ""}`;
+    const statusNote = `Service completed by ${provider.name}. Service price: ₹${finalPriceAmount}${materialCostAmount > 0 ? ` + Material cost: ₹${materialCostAmount} = Total: ₹${totalAmount.toFixed(2)}` : ""}`;
 
     await serviceRequestRepository.addStatusHistory(requestIdValue, {
       status: "completed",
@@ -1680,49 +1676,85 @@ export const completeService = async (req: Request, res: Response) => {
     // GENERATE INVOICE
     let generatedInvoice = null;
     try {
-      // Get pricing details from the service request
-      const pricingDetails = serviceRequest.pricingDetails || {};
+      console.log("🧾 [INVOICE] Starting invoice generation for request:", serviceRequest.id);
+      console.log("🧾 [INVOICE] Final price:", finalPriceAmount, "Material cost:", materialCostAmount);
 
-      // Use existing calculated values
-      const providerCharge = pricingDetails.providerCharge || 0;
-      const adminCharge = pricingDetails.adminCharge || 0;
+      // Get service category to use category-specific commission
+      const category = await serviceCategory.findById(serviceRequest.serviceCategoryId);
+      console.log("🧾 [INVOICE] Service category:", category?.name, "Commission type:", category?.adminCommission?.type);
 
-      // Calculate totals
-      const subTotal = totalAmount; // This is service price + material cost
-      const laborCost = providerCharge; // What provider earns for service
+      // Calculate totals based on FINAL price (not estimated)
+      const subTotal = totalAmount; // This is final service price + material cost
 
-      // Tax (18% GST on subtotal)
-      const taxRate = 18;
-      const taxAmount = (subTotal * taxRate) / 100;
+      // Calculate platform commission using category-specific settings
+      const platformFee = calculateAdminCommissionFromCategory(
+        finalPriceAmount,
+        category?.adminCommission
+      );
 
-      // Use the actual admin charge from pricingDetails (not hardcoded 15%)
-      const platformFee = adminCharge;
-      const platformFeeRate = pricingDetails.commissionRate || 0;
+      // Extract commission rate for display purposes
+      let commissionRate = 0;
+      if (category?.adminCommission) {
+        const commType = category.adminCommission.type || "fixed";
+        if (commType === "percentage") {
+          commissionRate = category.adminCommission.percentage || 0;
+        } else if (commType === "hybrid") {
+          commissionRate = category.adminCommission.percentage || 0;
+        } else {
+          commissionRate = 0; // Fixed rate has no percentage
+        }
+      }
 
-      // Provider earning = labor cost + material cost
+      console.log("🧾 [INVOICE] Commission applied - Type:", category?.adminCommission?.type, "Rate:", commissionRate + "%", "Fee: ₹" + platformFee);
+
+      // Provider earnings = service price - platform fee + material cost
       // Note: Provider should be reimbursed for materials they purchased
-      const providerEarning = providerCharge + materialCostAmount;
+      const laborCost = finalPriceAmount - platformFee; // What provider earns for service
+      const providerEarning = laborCost + materialCostAmount; // Total provider earnings
 
-      const finalTotalWithTax = subTotal + taxAmount;
+      // Tax (18% GST on subtotal + platform fee)
+      const taxRate = 18;
+      const taxableAmount = subTotal + platformFee; // Subtotal + platform fee are taxable
+      const taxAmount = (taxableAmount * taxRate) / 100;
 
-      // Create line items
+      const finalTotalWithTax = subTotal + platformFee + taxAmount;
+
+      console.log("🧾 [INVOICE] Calculated values:");
+      console.log("  - Service price:", finalPriceAmount);
+      console.log("  - Material cost:", materialCostAmount);
+      console.log("  - Subtotal (service + materials):", subTotal);
+      console.log("  - Platform fee (15% of service):", platformFee);
+      console.log("  - Taxable amount (subtotal + platform fee):", taxableAmount);
+      console.log("  - Tax (18%):", taxAmount);
+      console.log("  - Final total (subtotal + platform fee + tax):", finalTotalWithTax);
+
+      // Create line items based on FINAL price
       const lineItems = [
         {
           description: "Service charges",
           quantity: 1,
-          unitPrice: providerCharge,
-          total: providerCharge,
+          unitPrice: finalPriceAmount, // Use final price entered by provider
+          total: finalPriceAmount,
           itemType: "service",
         },
       ];
 
       // Add platform fee as separate line item for transparency
-      if (adminCharge > 0) {
+      if (platformFee > 0) {
+        let feeDescription = "Platform fee";
+        if (category?.adminCommission?.type === "percentage") {
+          feeDescription += ` (${category.adminCommission.percentage}%)`;
+        } else if (category?.adminCommission?.type === "hybrid") {
+          feeDescription += ` (₹${category.adminCommission.fixed} + ${category.adminCommission.percentage}%)`;
+        } else if (category?.adminCommission?.type === "fixed") {
+          feeDescription += ` (₹${category.adminCommission.fixed})`;
+        }
+
         lineItems.push({
-          description: "Platform fee",
+          description: feeDescription,
           quantity: 1,
-          unitPrice: adminCharge,
-          total: adminCharge,
+          unitPrice: platformFee,
+          total: platformFee,
           itemType: "additional_charge",
         });
       }
@@ -1737,23 +1769,28 @@ export const completeService = async (req: Request, res: Response) => {
         });
       }
 
-      // Generate invoice
+      console.log("🧾 [INVOICE] Line items created:", lineItems.length);
+      console.log("🧾 [INVOICE] Customer ID:", serviceRequest.customerId, "Provider ID:", serviceRequest.serviceProviderId);
+
+      // Generate invoice with FINAL pricing
       generatedInvoice = await invoiceRepository.createInvoice({
         requestId: serviceRequest.id,
         customerId: serviceRequest.customerId,
-        serviceProviderId: serviceRequest.serviceProviderId, 
+        serviceProviderId: serviceRequest.serviceProviderId,
         subTotal,
         materialCost: materialCostAmount,
-        laborCost: providerCharge,
+        laborCost,
         taxAmount,
         taxRate,
         discountAmount: 0,
-        platformFeeRate,
-        platformFee: adminCharge,
+        platformFeeRate: commissionRate,
+        platformFee,
         providerEarning,
         totalAmount: finalTotalWithTax,
         lineItems,
       });
+
+      console.log("🧾 [INVOICE] Invoice created with ID:", generatedInvoice.id, "Number:", generatedInvoice.invoiceNumber);
 
       // Link invoice to service request
       await invoiceRepository.linkInvoiceToService(
@@ -1761,12 +1798,13 @@ export const completeService = async (req: Request, res: Response) => {
         generatedInvoice.id,
       );
 
-      console.log(
-        "Invoice generated successfully:",
-        generatedInvoice.invoiceNumber,
-      );
+      console.log("🧾 [INVOICE] Invoice linked to service request successfully");
     } catch (invoiceError) {
-      console.error("Error generating invoice:", invoiceError);
+      console.error("❌ [INVOICE] Error generating invoice:", invoiceError);
+      console.error("❌ [INVOICE] Error details:", invoiceError instanceof Error ? invoiceError.message : invoiceError);
+      if (invoiceError instanceof Error) {
+        console.error("❌ [INVOICE] Stack trace:", invoiceError.stack);
+      }
     }
 
     res.status(200).json({
@@ -1777,10 +1815,11 @@ export const completeService = async (req: Request, res: Response) => {
           id: updatedRequest?.id,
           serviceTitle: updatedRequest?.serviceTitle,
           status: "completed",
-          finalPrice: totalAmount,
+          finalPrice: finalPriceAmount, // Service price only (without material cost)
           servicePrice: finalPriceAmount,
           materialCost: materialCostAmount,
           materialDescription: materialDescription || null,
+          totalAmount: totalAmount, // Combined total for reference
           estimatedPrice: updatedRequest?.estimatedPrice,
           completedAt: updatedRequest?.completedAt,
           afterImages: afterImages || [],
@@ -1793,7 +1832,9 @@ export const completeService = async (req: Request, res: Response) => {
         },
         pricing: {
           estimated: parseFloat(updatedRequest?.estimatedPrice || "0"),
-          final: totalAmount,
+          servicePrice: finalPriceAmount,
+          materialCost: materialCostAmount,
+          total: totalAmount,
           difference:
             totalAmount - parseFloat(updatedRequest?.estimatedPrice || "0"),
         },

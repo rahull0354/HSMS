@@ -23,7 +23,7 @@ import express from "express";
 const router = express.Router();
 
 router.post("/register", registerAdmin);
-router.get("/login", loginAdmin);
+router.post("/login", loginAdmin);
 
 // middleware protected routes
 router.get("/profile", drizzleAuthMiddleware(["admin"]), getProfile);

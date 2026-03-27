@@ -9,21 +9,28 @@ export class InvoiceRepository {
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0");
 
-    // Count invoices for this month
-    const startOfMonth = new Date(year, now.getMonth(), 1);
-    const endOfMonth = new Date(year, now.getMonth() + 1, 0, 23, 59, 59);
+    try {
+      // Get all invoices and count ones created in current month
+      const allInvoices = await db.select().from(invoices);
 
-    const monthlyInvoices = await db
-      .select()
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.createdAt, startOfMonth), // You'll need a better date filter
-        ),
-      );
+      // Filter invoices created in current month
+      const monthlyInvoices = allInvoices.filter((invoice) => {
+        if (!invoice.createdAt) return false;
+        const invoiceDate = new Date(invoice.createdAt);
+        return (
+          invoiceDate.getFullYear() === year &&
+          invoiceDate.getMonth() === now.getMonth()
+        );
+      });
 
-    const sequence = String(monthlyInvoices.length + 1).padStart(4, "0");
-    return `INV-${year}-${month}-${sequence}`;
+      const sequence = String(monthlyInvoices.length + 1).padStart(4, "0");
+      return `INV-${year}-${month}-${sequence}`;
+    } catch (error) {
+      console.error("Error generating invoice number:", error);
+      // Fallback to timestamp-based sequence if counting fails
+      const timestamp = Date.now().toString().slice(-4);
+      return `INV-${year}-${month}-${timestamp}`;
+    }
   }
 
   // Create invoice with line items

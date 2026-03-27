@@ -33,12 +33,7 @@ export const customers = pgTable(
     deactivatedAt: timestamp("deactivated_at"),
     reactivationToken: varchar("reactivation_token", { length: 255 }),
     reactivationExpires: timestamp("reactivation_expires"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    
   },
   (table) => ({
     emailIdx: index("customers_email_idx").on(table.email),
@@ -248,6 +243,10 @@ export const serviceRequests = pgTable(
       .default(sql`'[]'::jsonb`),
     estimatedPrice: decimal("estimated_price", { precision: 10, scale: 2 }),
     finalPrice: decimal("final_price", { precision: 10, scale: 2 }),
+    materialCost: decimal("material_cost", { precision: 10, scale: 2 })
+      .default("0")
+      .notNull(),
+    materialDescription: text("material_description"),
     pricingDetails: jsonb("pricing_details")
       .$type<{
         // Provider's earnings
@@ -375,6 +374,9 @@ export const notifications = pgTable(
     title: varchar("title", { length: 500 }).notNull(),
     message: text("message").notNull(),
     requestId: uuid("request_id").references(() => serviceRequests.id, {
+      onDelete: "cascade",
+    }),
+    reviewId: uuid("review_id").references(() => reviews.id, {
       onDelete: "cascade",
     }),
     isRead: boolean("is_read").default(false).notNull(),

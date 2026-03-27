@@ -916,10 +916,26 @@ export const getDashboardStats = async (req: Request, res: Response) => {
   try {
     const stats = await adminRepository.getDashboardStats()
 
+    // Transform stats to match frontend expectations
+    const transformedStats = {
+      totalUsers: stats.customers.total + stats.providers.total,
+      totalProviders: stats.providers.total,
+      totalCustomers: stats.customers.total,
+      totalCategories: stats.categories.total,
+      totalRequests: stats.requests.total,
+      pendingRequests: stats.requests.requested,
+      inProgressRequests: stats.requests.inProgress,
+      completedRequests: stats.requests.completed,
+      cancelledRequests: stats.requests.cancelled,
+      totalRevenue: 0, // TODO: Calculate from invoices table
+      activeProviders: stats.providers.active,
+      suspendedProviders: stats.providers.suspended,
+    };
+
     res.status(200).json({
         message: "Dashboard Statistics: ",
         success: true,
-        data: stats
+        data: transformedStats
     })
     return
   } catch (error) {
