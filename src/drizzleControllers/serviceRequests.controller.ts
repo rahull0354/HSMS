@@ -1634,10 +1634,23 @@ export const completeService = async (req: Request, res: Response) => {
     if (finalPrice) {
       finalPriceAmount = Number(finalPrice);
 
-      // Store final price WITHOUT material cost
+      // Calculate new pricing details based on final price
+      const existingPricingDetails = serviceRequest.pricingDetails as any || {};
+      const platformFeeRate = 15;
+      const platformFee = (finalPriceAmount * platformFeeRate) / 100;
+
+      // Store final price WITH updated pricing details
       await serviceRequestRepository.updateFinalPrice(
         requestIdValue,
         finalPriceAmount,
+        {
+          providerCharge: finalPriceAmount - platformFee,
+          adminCharge: platformFee,
+          ...existingPricingDetails,
+          total: finalPriceAmount,
+          commissionRate: platformFeeRate,
+          commissionType: "percentage",
+        },
       );
 
       // Calculate total amount for invoice (service price + material cost)

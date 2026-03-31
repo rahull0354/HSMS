@@ -6,6 +6,7 @@ import {
   getMyReviews,
   getProviderReviews,
   getReviewById,
+  getReviewDetailsForAdmin,
   getReviewsAboutMe,
   respondToReview,
   toggleReviewVisibility,
@@ -71,6 +72,11 @@ router.get(
   "/admin/all-reviews",
   drizzleAuthMiddleware(["admin"]),
   getAllReviews,
+);
+router.get(
+  "/admin/:reviewId",
+  drizzleAuthMiddleware(["admin"]),
+  getReviewDetailsForAdmin,
 );
 
 // Public routes

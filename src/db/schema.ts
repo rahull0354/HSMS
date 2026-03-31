@@ -33,7 +33,12 @@ export const customers = pgTable(
     deactivatedAt: timestamp("deactivated_at"),
     reactivationToken: varchar("reactivation_token", { length: 255 }),
     reactivationExpires: timestamp("reactivation_expires"),
-    
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (table) => ({
     emailIdx: index("customers_email_idx").on(table.email),

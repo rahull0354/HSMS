@@ -6,7 +6,7 @@ import {
   serviceProviders,
   serviceRequests,
 } from "#db/schema.js";
-import { and, desc, eq, gte, ilike, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import { serviceCategory } from "./serviceCategory.repository.js";
 
 export class AdminRepository {
@@ -284,6 +284,7 @@ export class AdminRepository {
         experienceYears: serviceProviders.experienceYears,
         certifications: serviceProviders.certifications,
         pricingType: serviceProviders.pricingType,
+        baseRate: serviceProviders.baseRate,
         serviceArea: serviceProviders.serviceArea,
         workingHours: serviceProviders.workingHours,
         availabilityStatus: serviceProviders.availabilityStatus,
@@ -367,6 +368,52 @@ export class AdminRepository {
   }
 
   async findCustomersWithoutCreds(customerId: string) {
+    // Subqueries for service request counts
+    const totalServices = db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(eq(serviceRequests.customerId, customers.id));
+
+    const completedServices = db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.customerId, customers.id),
+          eq(serviceRequests.status, "completed")
+        )
+      );
+
+    const pendingServices = db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.customerId, customers.id),
+          eq(serviceRequests.status, "requested")
+        )
+      );
+
+    const inProgressServices = db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.customerId, customers.id),
+          eq(serviceRequests.status, "in-progress")
+        )
+      );
+
+    const cancelledServices = db
+      .select({ count: sql<number>`count(*)` })
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.customerId, customers.id),
+          eq(serviceRequests.status, "cancelled")
+        )
+      );
+
     const result = await db
       .select({
         id: customers.id,
@@ -377,6 +424,11 @@ export class AdminRepository {
         isActive: customers.isActive,
         createdAt: customers.createdAt,
         updatedAt: customers.updatedAt,
+        totalServices: sql<number>`(${totalServices})`,
+        completedServices: sql<number>`(${completedServices})`,
+        pendingServices: sql<number>`(${pendingServices})`,
+        inProgressServices: sql<number>`(${inProgressServices})`,
+        cancelledServices: sql<number>`(${cancelledServices})`,
       })
       .from(customers)
       .where(eq(customers.id, customerId))
@@ -490,10 +542,7 @@ export class AdminRepository {
       .select({ count: sql<number>`count(*)` })
       .from(customers)
       .where(
-        and(
-          gte(customers.createdAt, startDate),
-          lte(customers.createdAt, endDate),
-        ),
+        sql`${customers.createdAt} >= ${startDate.toISOString()} AND ${customers.createdAt} <= ${endDate.toISOString()}`
       );
 
     return Number(result[0]?.count || 0);
@@ -504,10 +553,7 @@ export class AdminRepository {
       .select({ count: sql<number>`count(*)` })
       .from(serviceProviders)
       .where(
-        and(
-          gte(serviceProviders.createdAt, startDate),
-          lte(serviceProviders.createdAt, endDate),
-        ),
+        sql`${serviceProviders.createdAt} >= ${startDate.toISOString()} AND ${serviceProviders.createdAt} <= ${endDate.toISOString()}`
       );
 
     return Number(result[0]?.count || 0);

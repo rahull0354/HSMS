@@ -551,7 +551,20 @@ export class ReviewsRepository {
     return Number(result[0]?.count || 0);
   }
 
-  
+  // admin only function
+  async getReviewWithFullDetails(reviewId: string) {
+    const [review] = await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.id, reviewId))
+      .limit(1);
+
+    if (!review) {
+      return null;
+    }
+
+    return review;
+  }
 }
 
 export const reviewsRepository = new ReviewsRepository();

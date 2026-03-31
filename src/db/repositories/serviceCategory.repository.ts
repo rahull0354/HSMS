@@ -167,6 +167,15 @@ export class ServiceCategoryRepository {
 
     return result[0] || null;
   }
+
+  async getAllCategories() {
+    const result = await db
+      .select()
+      .from(serviceCategories)
+      .orderBy(serviceCategories.createdAt);
+
+    return result;
+  }
 }
 
 export const serviceCategory = new ServiceCategoryRepository();

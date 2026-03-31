@@ -9,6 +9,7 @@ import { adminRepository } from "#db/repositories/admin.repository.js";
 import { serviceCategory } from "#db/repositories/serviceCategory.repository.js";
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
 import { serviceProviderRepository } from "#db/repositories/serviceProvider.repository.js";
+import { invoiceRepository } from "#db/repositories/invoice.repository.js";
 
 export const registerAdmin = async (req: Request, res: Response) => {
   try {
@@ -196,6 +197,7 @@ export const createCategory = async (req: Request, res: Response) => {
       priceRange,
       commonServices,
       requiredSkills,
+      adminCommission,
     } = req.body;
 
     if (!name || !slug) {
@@ -228,6 +230,102 @@ export const createCategory = async (req: Request, res: Response) => {
       }
     }
 
+    // validate and set admin commission
+    let validatedCommission: {
+      type: "fixed" | "percentage" | "hybrid";
+      fixed?: number;
+      percentage?: number;
+      minCommission?: number;
+      maxCommission?: number;
+    };
+
+    if (adminCommission) {
+      // Validate commission type
+      if (!["fixed", "percentage", "hybrid"].includes(adminCommission.type)) {
+        res.status(400).json({
+          message: "Invalid commission type. Must be 'fixed', 'percentage', or 'hybrid'",
+          success: false,
+        });
+        return;
+      }
+
+      validatedCommission = {
+        type: adminCommission.type,
+      };
+
+      // Validate based on commission type
+      if (adminCommission.type === "fixed") {
+        if (!adminCommission.fixed || adminCommission.fixed < 0) {
+          res.status(400).json({
+            message: "Fixed commission amount is required and must be non-negative",
+            success: false,
+          });
+          return;
+        }
+        validatedCommission.fixed = adminCommission.fixed;
+      }
+
+      if (adminCommission.type === "percentage") {
+        if (
+          adminCommission.percentage === undefined ||
+          adminCommission.percentage < 0 ||
+          adminCommission.percentage > 100
+        ) {
+          res.status(400).json({
+            message: "Percentage commission must be between 0 and 100",
+            success: false,
+          });
+          return;
+        }
+        validatedCommission.percentage = adminCommission.percentage;
+
+        // Optional min/max for percentage
+        if (adminCommission.minCommission !== undefined) {
+          validatedCommission.minCommission = adminCommission.minCommission;
+        }
+        if (adminCommission.maxCommission !== undefined) {
+          validatedCommission.maxCommission = adminCommission.maxCommission;
+        }
+      }
+
+      if (adminCommission.type === "hybrid") {
+        if (
+          !adminCommission.percentage ||
+          adminCommission.percentage < 0 ||
+          adminCommission.percentage > 100
+        ) {
+          res.status(400).json({
+            message: "Hybrid commission requires percentage between 0 and 100",
+            success: false,
+          });
+          return;
+        }
+        if (!adminCommission.fixed || adminCommission.fixed < 0) {
+          res.status(400).json({
+            message: "Hybrid commission requires a fixed base amount",
+            success: false,
+          });
+          return;
+        }
+        validatedCommission.percentage = adminCommission.percentage;
+        validatedCommission.fixed = adminCommission.fixed;
+
+        // Optional min/max for hybrid
+        if (adminCommission.minCommission !== undefined) {
+          validatedCommission.minCommission = adminCommission.minCommission;
+        }
+        if (adminCommission.maxCommission !== undefined) {
+          validatedCommission.maxCommission = adminCommission.maxCommission;
+        }
+      }
+    } else {
+      // Default commission: 15% percentage
+      validatedCommission = {
+        type: "percentage",
+        percentage: 15,
+      };
+    }
+
     // validate common services if provided
     let validatedServices: any[] = [];
     if (commonServices && Array.isArray(commonServices)) {
@@ -254,6 +352,7 @@ export const createCategory = async (req: Request, res: Response) => {
       description,
       icon,
       priceRange,
+      adminCommission: validatedCommission,
       commonServices: validatedServices,
       requiredSkills: validatedSkills,
     });
@@ -403,6 +502,7 @@ export const updateCategory = async (req: Request, res: Response) => {
       priceRange,
       commonServices,
       requiredSkills,
+      adminCommission,
     } = req.body;
 
     if (!categoryId) {
@@ -468,6 +568,101 @@ export const updateCategory = async (req: Request, res: Response) => {
         return;
       }
       updateData.priceRange = priceRange;
+    }
+
+    // validate and update admin commission
+    if (adminCommission) {
+      // Validate commission type
+      if (!["fixed", "percentage", "hybrid"].includes(adminCommission.type)) {
+        res.status(400).json({
+          message: "Invalid commission type. Must be 'fixed', 'percentage', or 'hybrid'",
+          success: false,
+        });
+        return;
+      }
+
+      const validatedCommission: {
+        type: "fixed" | "percentage" | "hybrid";
+        fixed?: number;
+        percentage?: number;
+        minCommission?: number;
+        maxCommission?: number;
+      } = {
+        type: adminCommission.type,
+      };
+
+      // Validate based on commission type
+      if (adminCommission.type === "fixed") {
+        if (adminCommission.fixed !== undefined && adminCommission.fixed < 0) {
+          res.status(400).json({
+            message: "Fixed commission must be non-negative",
+            success: false,
+          });
+          return;
+        }
+        if (adminCommission.fixed !== undefined) {
+          validatedCommission.fixed = adminCommission.fixed;
+        }
+      }
+
+      if (adminCommission.type === "percentage") {
+        if (
+          adminCommission.percentage !== undefined &&
+          (adminCommission.percentage < 0 || adminCommission.percentage > 100)
+        ) {
+          res.status(400).json({
+            message: "Percentage commission must be between 0 and 100",
+            success: false,
+          });
+          return;
+        }
+        if (adminCommission.percentage !== undefined) {
+          validatedCommission.percentage = adminCommission.percentage;
+        }
+        if (adminCommission.minCommission !== undefined) {
+          validatedCommission.minCommission = adminCommission.minCommission;
+        }
+        if (adminCommission.maxCommission !== undefined) {
+          validatedCommission.maxCommission = adminCommission.maxCommission;
+        }
+      }
+
+      if (adminCommission.type === "hybrid") {
+        if (
+          adminCommission.percentage !== undefined &&
+          (adminCommission.percentage < 0 || adminCommission.percentage > 100)
+        ) {
+          res.status(400).json({
+            message: "Hybrid commission percentage must be between 0 and 100",
+            success: false,
+          });
+          return;
+        }
+        if (
+          adminCommission.fixed !== undefined &&
+          adminCommission.fixed < 0
+        ) {
+          res.status(400).json({
+            message: "Hybrid commission fixed amount must be non-negative",
+            success: false,
+          });
+          return;
+        }
+        if (adminCommission.percentage !== undefined) {
+          validatedCommission.percentage = adminCommission.percentage;
+        }
+        if (adminCommission.fixed !== undefined) {
+          validatedCommission.fixed = adminCommission.fixed;
+        }
+        if (adminCommission.minCommission !== undefined) {
+          validatedCommission.minCommission = adminCommission.minCommission;
+        }
+        if (adminCommission.maxCommission !== undefined) {
+          validatedCommission.maxCommission = adminCommission.maxCommission;
+        }
+      }
+
+      updateData.adminCommission = validatedCommission;
     }
 
     // validate and update common services
@@ -874,10 +1069,10 @@ export const getAllCustomers = async (req: Request, res: Response) => {
 
 export const getCustomerById = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const idValue = Array.isArray(id) ? id[0] : id
+    const { customerId } = req.params;
+    const idValue = Array.isArray(customerId) ? customerId[0] : customerId
 
-    if (!id) {
+    if (!customerId) {
       res.status(400).json({
         message: "Customer Id not provided",
         success: false,
@@ -915,6 +1110,7 @@ export const getCustomerById = async (req: Request, res: Response) => {
 export const getDashboardStats = async (req: Request, res: Response) => {
   try {
     const stats = await adminRepository.getDashboardStats()
+    const revenueStats = await invoiceRepository.getRevenueStats()
 
     // Transform stats to match frontend expectations
     const transformedStats = {
@@ -927,7 +1123,11 @@ export const getDashboardStats = async (req: Request, res: Response) => {
       inProgressRequests: stats.requests.inProgress,
       completedRequests: stats.requests.completed,
       cancelledRequests: stats.requests.cancelled,
-      totalRevenue: 0, // TODO: Calculate from invoices table
+      totalRevenue: revenueStats.totalRevenue,
+      pendingRevenue: revenueStats.pendingRevenue,
+      totalAmountProcessed: revenueStats.totalAmountProcessed,
+      paidInvoices: revenueStats.invoiceCounts.paid,
+      pendingInvoices: revenueStats.invoiceCounts.pending,
       activeProviders: stats.providers.active,
       suspendedProviders: stats.providers.suspended,
     };
@@ -942,6 +1142,122 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     console.error(error);
     res.status(500).json({
       message: "Error Fetching Dashboard Stats",
+      success: false,
+    });
+    return;
+  }
+};
+
+export const getServiceDistribution = async (req: Request, res: Response) => {
+  try {
+    // Get service distribution by category
+    const distribution = await serviceRequestRepository.getServiceDistributionByCategory();
+
+    // Get all categories to map IDs to names
+    const allCategories = await serviceCategory.getAllCategories();
+
+    // Create a map of category ID to category details
+    const categoryMap = new Map();
+    allCategories.forEach((cat: any) => {
+      categoryMap.set(cat.id, {
+        name: cat.name,
+        slug: cat.slug,
+      });
+    });
+
+    // Transform distribution data with category names
+    const transformedDistribution = distribution.map((item) => {
+      const categoryInfo = categoryMap.get(item.serviceCategoryId);
+      return {
+        categoryId: item.serviceCategoryId,
+        name: categoryInfo?.name || 'Unknown Category',
+        slug: categoryInfo?.slug || 'unknown',
+        count: item.count,
+      };
+    });
+
+    // Sort by count (descending)
+    transformedDistribution.sort((a, b) => b.count - a.count);
+
+    res.status(200).json({
+      message: "Service Distribution Data",
+      success: true,
+      data: transformedDistribution,
+    });
+    return;
+  } catch (error) {
+    console.error("Error fetching service distribution:", error);
+    res.status(500).json({
+      message: "Error Fetching Service Distribution",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Revenue distribution - shows how earnings are split between admin and provider
+export const getRevenueDistribution = async (req: Request, res: Response) => {
+  try {
+    const status = req.query.status as "paid" | "pending" | "overdue" | "cancelled" | undefined;
+    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+    const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+
+    const distribution = await invoiceRepository.getRevenueDistribution({
+      status,
+      startDate,
+      endDate,
+    });
+
+    res.status(200).json({
+      message: "Revenue Distribution - Admin vs Provider Earnings",
+      success: true,
+      data: distribution,
+    });
+    return;
+  } catch (error) {
+    console.error("Error fetching revenue distribution:", error);
+    res.status(500).json({
+      message: "Error Fetching Revenue Distribution",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Extract earnings breakdown from a specific service
+export const getServiceEarnings = async (req: Request, res: Response) => {
+  try {
+    const { requestId } = req.params;
+    const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId;
+
+    if (!requestIdValue) {
+      res.status(400).json({
+        message: "Request ID is required",
+        success: false,
+      });
+      return;
+    }
+
+    const earnings = await invoiceRepository.extractEarningsFromService(requestIdValue);
+
+    if (!earnings) {
+      res.status(404).json({
+        message: "No invoice found for this service request",
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Service Earnings Breakdown",
+      success: true,
+      data: earnings,
+    });
+    return;
+  } catch (error) {
+    console.error("Error extracting service earnings:", error);
+    res.status(500).json({
+      message: "Error Extracting Service Earnings",
       success: false,
     });
     return;

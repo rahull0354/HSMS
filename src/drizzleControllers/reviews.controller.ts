@@ -968,6 +968,115 @@ export const getAllReviews = async (req: Request, res: Response) => {
   }
 };
 
+// Admin functions - Get single review with full details
+
+export const getReviewDetailsForAdmin = async (req: Request, res: Response) => {
+  try {
+    const adminId = (req as any).user.id;
+    const { reviewId } = req.params;
+    const reviewIdValue = Array.isArray(reviewId) ? reviewId[0] : reviewId;
+
+    if (!reviewIdValue) {
+      res.status(400).json({
+        message: "Review ID is required",
+        success: false,
+      });
+      return;
+    }
+
+    // Get review details (including hidden/flagged reviews)
+    const review = await reviewsRepository.getReviewWithFullDetails(reviewIdValue);
+
+    if (!review) {
+      res.status(404).json({
+        message: "Review not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Fetch related data
+    const customer = await customerRepository.findById(review.customerId);
+    const serviceProvider = await serviceProviderRepository.findById(review.serviceProviderId);
+    const serviceRequest = await serviceRequestRepository.findById(review.serviceRequestId);
+
+    // Build full response
+    const fullReviewDetails = {
+      // Review details
+      review: {
+        id: review.id,
+        rating: review.rating,
+        comment: review.comment,
+        detailedRatings: review.detailedRatings,
+        isVisible: review.isVisible,
+        isFlagged: review.isFlagged,
+        flagReason: review.flagReason,
+        createdAt: review.createdAt,
+        updatedAt: review.updatedAt,
+
+        // Provider response (if any)
+        providerResponse: review.providerResponse
+          ? {
+              comment: review.providerResponse.comment,
+              respondedAt: review.providerResponse.respondedAt,
+            }
+          : null,
+      },
+
+      // Customer details (who wrote the review)
+      customer: customer
+        ? {
+            id: customer.id,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            isActive: customer.isActive,
+            joinedDate: customer.createdAt,
+          }
+        : null,
+
+      // Provider details (who was reviewed)
+      serviceProvider: serviceProvider
+        ? {
+            id: serviceProvider.id,
+            name: serviceProvider.name,
+            email: serviceProvider.email,
+            phone: serviceProvider.phone,
+            isActive: serviceProvider.isActive,
+            isSuspended: serviceProvider.isSuspended,
+            joinedDate: serviceProvider.createdAt,
+          }
+        : null,
+
+      // Service request details (what service was reviewed)
+      serviceRequest: serviceRequest
+        ? {
+            id: serviceRequest.id,
+            title: serviceRequest.serviceTitle,
+            type: serviceRequest.serviceType,
+            description: serviceRequest.serviceDescription,
+            status: serviceRequest.status,
+            completedAt: serviceRequest.completedAt,
+          }
+        : null,
+    };
+
+    res.status(200).json({
+      message: "Review details retrieved successfully",
+      success: true,
+      data: fullReviewDetails,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error fetching review details",
+      success: false,
+    });
+    return;
+  }
+};
+
 // // general functions
 
 export const getProviderReviews = async (req: Request, res: Response) => {
@@ -1133,6 +1242,7 @@ export const getReviewById = async (req: Request, res: Response) => {
       provider: serviceProvider ? {
         id: serviceProvider.id,
         name: serviceProvider.name,
+        email: serviceProvider.email
       } : null,
     };
 
