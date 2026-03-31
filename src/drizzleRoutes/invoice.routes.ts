@@ -23,10 +23,10 @@ router.get(
   getProviderInvoices,
 );
 
-// Other invoice routes
-router.get("/:id", getInvoiceById);
-router.get("/number/:invoiceNumber", getInvoiceByNumber);
+// Other invoice routes - SPECIFIC routes must come BEFORE parameterized routes
 router.get("/request/:requestId", getInvoicesByRequestId);
+router.get("/number/:invoiceNumber", getInvoiceByNumber);
 router.post("/:id/pay", markInvoicesPaid);
+router.get("/:id", getInvoiceById);
 
 export default router;

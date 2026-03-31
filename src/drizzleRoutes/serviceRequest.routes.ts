@@ -63,7 +63,7 @@ router.patch(
 
 router.get(
   "/customer/service-request/:requestId",
-  drizzleAuthMiddleware(["customer"]),
+  drizzleAuthMiddleware(["customer", "admin"]),
   getRequestById,
 );
 

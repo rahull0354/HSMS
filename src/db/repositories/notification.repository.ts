@@ -14,6 +14,7 @@ export class NotificationRepository {
         title: data.title,
         message: data.message,
         requestId: data.requestId || null,
+        reviewId: data.reviewId || null,
         isRead: data.isRead ?? false,
       })
       .returning();

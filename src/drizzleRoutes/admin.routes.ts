@@ -10,6 +10,9 @@ import {
   getDashboardStats,
   getProfile,
   getServiceProviderById,
+  getServiceDistribution,
+  getRevenueDistribution,
+  getServiceEarnings,
   loginAdmin,
   registerAdmin,
   suspendProvider,
@@ -23,7 +26,13 @@ import express from "express";
 const router = express.Router();
 
 router.post("/register", registerAdmin);
-router.get("/login", loginAdmin);
+router.post("/login", loginAdmin);
+
+// dashboard management routes
+router.get("/dashboard", drizzleAuthMiddleware(["admin"]), getDashboardStats);
+router.get("/service-distribution", drizzleAuthMiddleware(["admin"]), getServiceDistribution);
+router.get("/revenue-distribution", drizzleAuthMiddleware(["admin"]), getRevenueDistribution);
+router.get("/service-earnings/:requestId", drizzleAuthMiddleware(["admin"]), getServiceEarnings);
 
 // middleware protected routes
 router.get("/profile", drizzleAuthMiddleware(["admin"]), getProfile);
@@ -94,8 +103,5 @@ router.get(
   drizzleAuthMiddleware(["admin"]),
   getCustomerById,
 );
-
-// dashboard management routes
-router.get("/dashboard", drizzleAuthMiddleware(["admin"]), getDashboardStats);
 
 export default router;

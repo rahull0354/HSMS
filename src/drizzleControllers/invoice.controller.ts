@@ -1,5 +1,8 @@
 import { invoiceRepository } from "#db/repositories/invoice.repository.js";
 import { Request, Response } from "express";
+import db from "#db/index.js";
+import { customers, serviceRequests, serviceProviders } from "#db/schema.js";
+import { eq } from "drizzle-orm";
 
 export const getInvoiceById = async (req: Request, res: Response) => {
   try {
@@ -16,8 +19,64 @@ export const getInvoiceById = async (req: Request, res: Response) => {
       return;
     }
 
+    // Fetch customer details
+    let customer = null;
+    if (invoice.customerId) {
+      const [customerData] = await db
+        .select({
+          id: customers.id,
+          name: customers.name,
+          email: customers.email,
+          phone: customers.phone,
+        })
+        .from(customers)
+        .where(eq(customers.id, invoice.customerId))
+        .limit(1);
+
+      customer = customerData;
+    }
+
+    // Fetch service request details
+    let serviceRequest = null;
+    if (invoice.requestId) {
+      const [requestData] = await db
+        .select({
+          id: serviceRequests.id,
+          title: serviceRequests.serviceTitle,
+          serviceType: serviceRequests.serviceType,
+          serviceDescription: serviceRequests.serviceDescription,
+          schedule: serviceRequests.schedule,
+          serviceAddress: serviceRequests.serviceAddress,
+        })
+        .from(serviceRequests)
+        .where(eq(serviceRequests.id, invoice.requestId))
+        .limit(1);
+
+      serviceRequest = requestData;
+    }
+
+    // Fetch service provider details
+    let serviceProvider = null;
+    if (invoice.serviceProviderId) {
+      const [providerData] = await db
+        .select({
+          id: serviceProviders.id,
+          name: serviceProviders.name,
+        })
+        .from(serviceProviders)
+        .where(eq(serviceProviders.id, invoice.serviceProviderId))
+        .limit(1);
+
+      serviceProvider = providerData;
+    }
+
     res.status(200).json({
-      data: invoice,
+      data: {
+        ...invoice,
+        customer,
+        serviceRequest,
+        serviceProvider,
+      },
       success: true,
     });
     return;
@@ -52,8 +111,72 @@ export const getInvoiceByNumber = async (req: Request, res: Response) => {
       invoice.id,
     );
 
+    if (!invoiceWithItems) {
+      res.status(404).json({
+        message: "Invoice not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Fetch customer details
+    let customer = null;
+    if (invoiceWithItems.customerId) {
+      const [customerData] = await db
+        .select({
+          id: customers.id,
+          name: customers.name,
+          email: customers.email,
+          phone: customers.phone,
+        })
+        .from(customers)
+        .where(eq(customers.id, invoiceWithItems.customerId))
+        .limit(1);
+
+      customer = customerData;
+    }
+
+    // Fetch service request details
+    let serviceRequest = null;
+    if (invoiceWithItems.requestId) {
+      const [requestData] = await db
+        .select({
+          id: serviceRequests.id,
+          title: serviceRequests.serviceTitle,
+          serviceType: serviceRequests.serviceType,
+          serviceDescription: serviceRequests.serviceDescription,
+          schedule: serviceRequests.schedule,
+          serviceAddress: serviceRequests.serviceAddress,
+        })
+        .from(serviceRequests)
+        .where(eq(serviceRequests.id, invoiceWithItems.requestId))
+        .limit(1);
+
+      serviceRequest = requestData;
+    }
+
+    // Fetch service provider details
+    let serviceProvider = null;
+    if (invoiceWithItems.serviceProviderId) {
+      const [providerData] = await db
+        .select({
+          id: serviceProviders.id,
+          name: serviceProviders.name,
+        })
+        .from(serviceProviders)
+        .where(eq(serviceProviders.id, invoiceWithItems.serviceProviderId))
+        .limit(1);
+
+      serviceProvider = providerData;
+    }
+
     res.status(200).json({
-      data: invoiceWithItems,
+      data: {
+        ...invoiceWithItems,
+        customer,
+        serviceRequest,
+        serviceProvider,
+      },
       success: true,
     });
     return;
@@ -187,8 +310,72 @@ export const getInvoicesByRequestId = async (req: Request, res: Response) => {
       invoice.id,
     );
 
+    if (!invoiceWithItems) {
+      res.status(404).json({
+        message: "Invoice not found for this request",
+        success: false,
+      });
+      return;
+    }
+
+    // Fetch customer details
+    let customer = null;
+    if (invoiceWithItems.customerId) {
+      const [customerData] = await db
+        .select({
+          id: customers.id,
+          name: customers.name,
+          email: customers.email,
+          phone: customers.phone,
+        })
+        .from(customers)
+        .where(eq(customers.id, invoiceWithItems.customerId))
+        .limit(1);
+
+      customer = customerData;
+    }
+
+    // Fetch service request details
+    let serviceRequest = null;
+    if (invoiceWithItems.requestId) {
+      const [requestData] = await db
+        .select({
+          id: serviceRequests.id,
+          title: serviceRequests.serviceTitle,
+          serviceType: serviceRequests.serviceType,
+          serviceDescription: serviceRequests.serviceDescription,
+          schedule: serviceRequests.schedule,
+          serviceAddress: serviceRequests.serviceAddress,
+        })
+        .from(serviceRequests)
+        .where(eq(serviceRequests.id, invoiceWithItems.requestId))
+        .limit(1);
+
+      serviceRequest = requestData;
+    }
+
+    // Fetch service provider details
+    let serviceProvider = null;
+    if (invoiceWithItems.serviceProviderId) {
+      const [providerData] = await db
+        .select({
+          id: serviceProviders.id,
+          name: serviceProviders.name,
+        })
+        .from(serviceProviders)
+        .where(eq(serviceProviders.id, invoiceWithItems.serviceProviderId))
+        .limit(1);
+
+      serviceProvider = providerData;
+    }
+
     res.status(200).json({
-      data: invoiceWithItems,
+      data: {
+        ...invoiceWithItems,
+        customer,
+        serviceRequest,
+        serviceProvider,
+      },
       success: true,
     });
   } catch (error: any) {

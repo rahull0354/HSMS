@@ -265,11 +265,11 @@ export const notifyCustomerAboutReviewReply = async (
             type: "new_review",
             title: "Provider Responded to Your Review",
             message: `${providerName} has responded to your review: "${responseComment.substring(0, 100)}${responseComment.length > 100 ? "..." : ""}"`,
-            requestId: reviewId,
+            reviewId: reviewId,
             isRead: false
         });
 
-        console.log(`Notification sent to provider ${customerId}`);
+        console.log(`Notification sent to customer ${customerId}`);
         return notification
     } catch (error) {
         console.error("Error sending notification to customer: ", error);

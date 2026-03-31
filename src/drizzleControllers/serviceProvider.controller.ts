@@ -96,24 +96,6 @@ export const loginServiceProvider = async (req: Request, res: Response) => {
       return;
     }
 
-    // check if account is deactivated
-    if (!checkServiceProvider.isActive) {
-      res.status(403).json({
-        message: "Your account is deactivated. Please reactivate to continue.",
-        success: false,
-      });
-      return;
-    }
-
-    // check if account is suspended
-    if (checkServiceProvider.isSuspended) {
-      res.status(403).json({
-        message: "Your account is Suspended. Please contact support.",
-        success: false,
-      });
-      return;
-    }
-
     // password matching
     const matchPassword = await bcrypt.compare(
       password,

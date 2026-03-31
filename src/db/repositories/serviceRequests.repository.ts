@@ -383,10 +383,15 @@ export class ServiceRequestRepository {
   async updateFinalPrice(
     requestId: string,
     finalPrice: number,
-    pricingDetails?: {
-      baseCharge?: number;
+    pricingDetails: {
+      providerCharge: number;
+      adminCharge: number;
       additionalCharge?: number;
-      breakdown?: string;
+      additionalBreakdown?: string;
+      subTotal?: number;
+      total?: number;
+      commissionRate?: number;
+      commissionType?: "fixed" | "percentage" | "hybrid";
     },
   ) {
     const request = await this.findById(requestId);
@@ -394,7 +399,7 @@ export class ServiceRequestRepository {
 
     return await this.update(requestId, {
       finalPrice: finalPrice.toString(),
-      ...(pricingDetails && { pricingDetails }),
+      pricingDetails,
     });
   }
 
@@ -573,6 +578,28 @@ export class ServiceRequestRepository {
       );
 
     return Number(result[0]?.count || 0);
+  }
+
+  // Get service distribution statistics grouped by category
+  async getServiceDistributionByCategory() {
+    const results = await db
+      .select({
+        serviceCategoryId: serviceRequests.serviceCategoryId,
+      })
+      .from(serviceRequests);
+
+    // Group by serviceCategoryId and count
+    const distribution = new Map<string, number>();
+    results.forEach((request) => {
+      const categoryId = request.serviceCategoryId;
+      distribution.set(categoryId, (distribution.get(categoryId) || 0) + 1);
+    });
+
+    // Convert to array format
+    return Array.from(distribution.entries()).map(([categoryId, count]) => ({
+      serviceCategoryId: categoryId,
+      count,
+    }));
   }
 
   async findAllWithPagination(params: {

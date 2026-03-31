@@ -1,13 +1,3 @@
-/**
- * Calculate service pricing based on provider rate and admin commission
- *
- * Pricing Logic:
- * 1. Find providers who match the category requirements (skills, location)
- * 2. Get the provider's rate for this specific service (or base rate)
- * 3. Calculate admin commission based on category settings
- * 4. Total = Provider Rate + Admin Commission
- */
-
 interface AdminCommission {
   type: 'fixed' | 'percentage' | 'hybrid';
   fixed?: number;
