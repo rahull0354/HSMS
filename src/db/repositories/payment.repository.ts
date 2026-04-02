@@ -1,11 +1,8 @@
 import db from "#db/index.js";
 import { payments } from "#db/schema.js";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 export class PaymentRepository {
-  /**
-   * Create a new payment record
-   */
   async createPayment(data: {
     invoiceId: string;
     gateway: string;
@@ -92,6 +89,75 @@ export class PaymentRepository {
       .orderBy(desc(payments.createdAt));
 
     return paymentsList;
+  }
+
+  /**
+   * Get pending (initiated/processing) payment for an invoice
+   * This is used to prevent duplicate payments
+   */
+  async getPendingPayment(invoiceId: string) {
+    const [payment] = await db
+      .select()
+      .from(payments)
+      .where(
+        and(
+          eq(payments.invoiceId, invoiceId),
+          inArray(payments.status, ["initiated", "processing"])
+        )
+      )
+      .limit(1);
+
+    return payment || null;
+  }
+
+  /**
+   * Create payment with duplicate check
+   * Returns existing pending payment if found, otherwise creates new one
+   * This prevents race conditions and duplicate payments
+   */
+  async createPaymentWithDuplicateCheck(data: {
+    invoiceId: string;
+    gateway: string;
+    gatewayOrderId?: string;
+    amount: string;
+    currency?: string;
+    status: string;
+    gatewayResponse?: any;
+    clientIp?: string;
+    userAgent?: string;
+    metadata?: any;
+  }) {
+    // First, check for existing pending payment
+    const existingPayment = await this.getPendingPayment(data.invoiceId);
+
+    if (existingPayment) {
+      console.log(`[PAYMENT] Found existing pending payment ${existingPayment.id} for invoice ${data.invoiceId}`);
+      return existingPayment;
+    }
+
+    // No existing payment, create new one
+    console.log(`[PAYMENT] Creating new payment for invoice ${data.invoiceId}`);
+
+    const [payment] = await db
+      .insert(payments)
+      .values({
+        invoiceId: data.invoiceId,
+        gateway: data.gateway,
+        gatewayPaymentId: null,
+        gatewayOrderId: data.gatewayOrderId || null,
+        amount: data.amount,
+        currency: data.currency || "INR",
+        paymentMethod: null,
+        status: data.status,
+        gatewayResponse: data.gatewayResponse || {},
+        clientIp: data.clientIp || null,
+        userAgent: data.userAgent || null,
+        metadata: data.metadata || {},
+        initiatedAt: new Date(),
+      })
+      .returning();
+
+    return payment;
   }
 
   /**

@@ -24,10 +24,6 @@ function validateAmount(amount: number): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-/**
- * Create payment intent for an invoice
- * POST /api/payments/create-intent
- */
 export const createPaymentIntent = async (req: Request, res: Response) => {
   try {
     const customerId = (req as any).user.id;
@@ -97,20 +93,33 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
     );
 
     if (pendingPayment) {
-      // Return existing payment instead of creating a new one
-      res.status(200).json({
-        message: "Payment already initiated",
-        success: true,
-        data: {
-          paymentId: pendingPayment.id,
-          clientSecret: null, // Will need to fetch from Stripe if needed
-          amount: pendingPayment.amount,
-          currency: pendingPayment.currency,
-          status: pendingPayment.status,
-          publishableKey: STRIPE_PUBLISHABLE_KEY,
-        },
-      });
-      return;
+      if (pendingPayment.gatewayOrderId) {
+        console.log("Found existing payment, retrieving from stripe:", pendingPayment.gatewayOrderId);
+
+        const stripeResult = await stripeService.retrievePaymentIntent(
+          pendingPayment.gatewayOrderId
+        )
+
+        if (stripeResult.success && stripeResult.clientSecret) {
+          res.status(200).json({
+            message: "Payment already initiated",
+            success: true,
+            data: {
+              paymentId: pendingPayment.id,
+              clientSecret: stripeResult.clientSecret,
+              paymentIntentId: stripeResult.paymentIntentId,
+              amount: pendingPayment.amount,
+              currency: pendingPayment.currency || "INR",
+              status: pendingPayment.status || stripeResult.status,
+              publishableKey: STRIPE_PUBLISHABLE_KEY,
+            }
+          })
+        } else {
+          // stripe retrieval failed - create new payment intent
+          console.error("Failed to retrieve from stripe: ", stripeResult.error);
+        }
+        
+      }
     }
 
     // Get total amount from invoice
@@ -127,7 +136,7 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
       return;
     }
 
-    // Create payment intent with Stripe
+    // Create payment intent with Stripe (with idempotency key to prevent duplicates)
     const result = await stripeService.createPaymentIntent({
       amount: amountInPaise,
       currency: "inr",
@@ -138,7 +147,7 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
         invoiceNumber: invoice.invoiceNumber,
         customerEmail: (req as any).user.email,
       },
-    });
+    }, invoice.id); // Use invoice ID as idempotency key
 
     if (!result.success) {
       res.status(500).json({
@@ -148,8 +157,8 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
       return;
     }
 
-    // Create payment record
-    const payment = await paymentRepository.createPayment({
+    // Create payment record with duplicate check
+    const payment = await paymentRepository.createPaymentWithDuplicateCheck({
       invoiceId: invoice.id,
       gateway: "stripe",
       gatewayOrderId: result.paymentIntentId,
