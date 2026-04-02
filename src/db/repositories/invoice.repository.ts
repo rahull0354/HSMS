@@ -1,6 +1,6 @@
 import db from "#db/index.js";
-import { invoiceLineItems, invoices, serviceRequests } from "#db/schema.js";
-import { and, eq, sql } from "drizzle-orm";
+import { customers, invoiceLineItems, invoices, serviceProviders, serviceRequests } from "#db/schema.js";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 export class InvoiceRepository {
   // Generate invoice number: INV-YYYY-MM-NNNN
@@ -55,6 +55,9 @@ export class InvoiceRepository {
       total: number;
       itemType?: string;
     }>;
+    status?: "pending" | "paid";
+    paymentMethod?: string | null;
+    paidAt?: Date;
   }) {
     const invoiceNumber = await this.generateInvoiceNumber();
 
@@ -75,7 +78,9 @@ export class InvoiceRepository {
         platformFee: data.platformFee.toString(),
         providerEarning: data.providerEarning.toString(),
         totalAmount: data.totalAmount.toString(),
-        status: "pending",
+        status: data.status || "pending",
+        paymentMethod: data.paymentMethod || null,
+        paidAt: data.paidAt,
       })
       .returning();
 
@@ -317,10 +322,6 @@ export class InvoiceRepository {
     };
   }
 
-  /**
-   * Extract and separate earnings from a completed service
-   * Returns the breakdown of how the total amount is split between admin and provider
-   */
   async extractEarningsFromService(requestId: string) {
     const [invoice] = await db
       .select()
@@ -383,10 +384,6 @@ export class InvoiceRepository {
     };
   }
 
-  /**
-   * Get revenue distribution across all paid invoices
-   * Shows how total revenue is split between admin and provider
-   */
   async getRevenueDistribution(filters?: {
     status?: "paid" | "pending" | "overdue" | "cancelled";
     startDate?: Date;
@@ -458,6 +455,175 @@ export class InvoiceRepository {
           grandTotal > 0 ? ((adminTotal / grandTotal) * 100).toFixed(2) : "0.00",
           grandTotal > 0 ? ((providerTotal / grandTotal) * 100).toFixed(2) : "0.00",
         ],
+      },
+    };
+  }
+
+  async getAllInvoices(params?: {
+    filters?: {
+      customerId?: string;
+      serviceProviderId?: string;
+      status?: "pending" | "paid" | "overdue" | "cancelled";
+      startDate?: Date;
+      endDate?: Date;
+      invoiceNumber?: string;
+    };
+    pagination?: {
+      page?: number;
+      limit?: number;
+    };
+    sort?: {
+      field?: "createdAt" | "updatedAt" | "totalAmount" | "invoiceNumber";
+      order?: "asc" | "desc";
+    };
+  }) {
+    const conditions = [];
+
+    // Build filter conditions
+    if (params?.filters?.customerId) {
+      conditions.push(eq(invoices.customerId, params.filters.customerId));
+    }
+
+    if (params?.filters?.serviceProviderId) {
+      conditions.push(
+        eq(invoices.serviceProviderId, params.filters.serviceProviderId),
+      );
+    }
+
+    if (params?.filters?.status) {
+      conditions.push(eq(invoices.status, params.filters.status));
+    }
+
+    if (params?.filters?.invoiceNumber) {
+      conditions.push(eq(invoices.invoiceNumber, params.filters.invoiceNumber));
+    }
+
+    if (params?.filters?.startDate || params?.filters?.endDate) {
+      const dateConditions = [];
+      if (params?.filters?.startDate) {
+        dateConditions.push(
+          sql`${invoices.createdAt} >= ${params.filters.startDate.toISOString()}`,
+        );
+      }
+      if (params?.filters?.endDate) {
+        dateConditions.push(
+          sql`${invoices.createdAt} <= ${params.filters.endDate.toISOString()}`,
+        );
+      }
+      conditions.push(and(...dateConditions));
+    }
+
+    // Pagination
+    const page = params?.pagination?.page || 1;
+    const limit = params?.pagination?.limit || 10;
+    const offset = (page - 1) * limit;
+
+    // Sorting
+    const sortField = params?.sort?.field || "createdAt";
+    const sortOrder = params?.sort?.order || "desc";
+
+    let orderByClause;
+    switch (sortField) {
+      case "createdAt":
+        orderByClause =
+          sortOrder === "asc" ? invoices.createdAt : desc(invoices.createdAt);
+        break;
+      case "updatedAt":
+        orderByClause =
+          sortOrder === "asc" ? invoices.updatedAt : desc(invoices.updatedAt);
+        break;
+      case "totalAmount":
+        orderByClause =
+          sortOrder === "asc"
+            ? sql`CAST(${invoices.totalAmount} AS FLOAT) ASC`
+            : sql`CAST(${invoices.totalAmount} AS FLOAT) DESC`;
+        break;
+      case "invoiceNumber":
+        orderByClause =
+          sortOrder === "asc"
+            ? invoices.invoiceNumber
+            : desc(invoices.invoiceNumber);
+        break;
+      default:
+        orderByClause = desc(invoices.createdAt);
+    }
+
+    // Fetch invoices
+    const invoicesData = await db
+      .select()
+      .from(invoices)
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(orderByClause)
+      .limit(limit)
+      .offset(offset);
+
+    // Get total count
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(invoices)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    const total = Number(totalResult[0]?.count || 0);
+    const totalPages = Math.ceil(total / limit);
+
+    // Fetch customer details
+    const customerIds = Array.from(
+      new Set(invoicesData.map((inv) => inv.customerId).filter(Boolean))
+    );
+
+    const customersMap = new Map();
+    if (customerIds.length > 0) {
+      const customersData = await db
+        .select({
+          id: customers.id,
+          name: customers.name,
+          email: customers.email,
+          phone: customers.phone,
+        })
+        .from(customers)
+        .where(inArray(customers.id, customerIds));
+
+      customersData.forEach((customer) => {
+        customersMap.set(customer.id, customer);
+      });
+    }
+
+    // Fetch service provider details
+    const providerIds = Array.from(
+      new Set(invoicesData.map((inv) => inv.serviceProviderId).filter(Boolean))
+    );
+
+    const providersMap = new Map();
+    if (providerIds.length > 0) {
+      const providersData = await db
+        .select({
+          id: serviceProviders.id,
+          name: serviceProviders.name,
+        })
+        .from(serviceProviders)
+        .where(inArray(serviceProviders.id, providerIds));
+
+      providersData.forEach((provider) => {
+        providersMap.set(provider.id, provider);
+      });
+    }
+
+    // Enrich invoices with customer and provider data
+    const enrichedInvoices = invoicesData.map((invoice) => ({
+      ...invoice,
+      customer: customersMap.get(invoice.customerId) || null,
+      serviceProvider: providersMap.get(invoice.serviceProviderId) || null,
+    }));
+
+    return {
+      invoices: enrichedInvoices,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
       },
     };
   }

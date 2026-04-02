@@ -1,8 +1,10 @@
 import { invoiceRepository } from "#db/repositories/invoice.repository.js";
+import { paymentRepository } from "#db/repositories/payment.repository.js";
+import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
 import { Request, Response } from "express";
 import db from "#db/index.js";
-import { customers, serviceRequests, serviceProviders } from "#db/schema.js";
-import { eq } from "drizzle-orm";
+import { customers, serviceProviders, serviceRequests } from "#db/schema.js";
+import { eq, inArray } from "drizzle-orm";
 
 export const getInvoiceById = async (req: Request, res: Response) => {
   try {
@@ -227,8 +229,32 @@ export const getProviderInvoices = async (req: Request, res: Response) => {
       invoices = invoices.filter((inv: any) => inv.status === status);
     }
 
+    // Fetch service requests to get service titles
+    const serviceRequestIds = invoices.map((inv: any) => inv.requestId);
+    const serviceRequests = await serviceRequestRepository.findByIds(serviceRequestIds);
+
+    // Create a map of request ID to service title
+    const serviceTitleMap = new Map();
+    serviceRequests.forEach((req: any) => {
+      if (req) {
+        serviceTitleMap.set(req.id, {
+          serviceTitle: req.serviceTitle,
+          serviceType: req.serviceType,
+        });
+      }
+    });
+
+    // Add service information to each invoice
+    const enrichedInvoices = invoices.map((invoice: any) => ({
+      ...invoice,
+      service: serviceTitleMap.get(invoice.requestId) || {
+        serviceTitle: "Unknown Service",
+        serviceType: "unknown",
+      },
+    }));
+
     res.status(200).json({
-      data: invoices,
+      data: enrichedInvoices,
       success: true,
     });
   } catch (error: any) {
@@ -264,12 +290,51 @@ export const markInvoicesPaid = async (req: Request, res: Response) => {
       return;
     }
 
+    // Check if payment record already exists for this invoice
+    const existingPayments = await paymentRepository.getPaymentsByInvoice(idValue);
+    if (existingPayments && existingPayments.length > 0) {
+      res.status(400).json({
+        message: "Payment record already exists for this invoice",
+        success: false,
+      });
+      return;
+    }
+
+    // Create payment record in the payments table
+    const payment = await paymentRepository.createPayment({
+      invoiceId: idValue,
+      gateway: paymentMethod?.toLowerCase() || "manual",
+      gatewayOrderId: transactionId || paymentId || `manual_${Date.now()}`,
+      amount: invoice.totalAmount,
+      currency: "INR",
+      status: "completed",
+      clientIp: req.ip,
+      userAgent: req.get("user-agent"),
+      metadata: {
+        paymentMethod: paymentMethod || "upi",
+        transactionId,
+        manualPayment: true,
+      },
+    });
+
+    // Update payment status to completed with gateway details
+    await paymentRepository.updatePaymentStatus(payment.id, "completed", {
+      gatewayPaymentId: transactionId || paymentId,
+      gatewayResponse: {
+        paymentMethod,
+        transactionId,
+        manualPayment: true,
+      },
+      completedAt: new Date(),
+    });
+
+    // Update invoice status to paid
     const updated = await invoiceRepository.updateInvoiceStatus(
       idValue,
       "paid",
       {
         paymentMethod: paymentMethod || "upi",
-        paymentId,
+        paymentId: payment.id,
         transactionId,
         paidAt: new Date(),
       },
@@ -278,7 +343,16 @@ export const markInvoicesPaid = async (req: Request, res: Response) => {
     res.status(200).json({
       message: "Payment received successfully",
       success: true,
-      data: updated,
+      data: {
+        invoice: updated,
+        payment: {
+          id: payment.id,
+          amount: payment.amount,
+          status: payment.status,
+          paymentMethod,
+          transactionId,
+        },
+      },
     });
   } catch (error: any) {
     console.error("Error recording payment:", error);
@@ -387,3 +461,72 @@ export const getInvoicesByRequestId = async (req: Request, res: Response) => {
     return
   }
 };
+
+export const getAllInvoices = async (req: Request, res: Response) => {
+  try {
+    // Build filters object from query params
+    const filters: any = {};
+
+    if (req.query.customerId) {
+      filters.customerId = req.query.customerId;
+    }
+
+    if (req.query.serviceProviderId) {
+      filters.serviceProviderId = req.query.serviceProviderId;
+    }
+
+    if (req.query.status) {
+      filters.status = req.query.status;
+    }
+
+    if (req.query.invoiceNumber) {
+      filters.invoiceNumber = req.query.invoiceNumber;
+    }
+
+    if (req.query.startDate) {
+      filters.startDate = new Date(req.query.startDate as string);
+    }
+
+    if (req.query.endDate) {
+      filters.endDate = new Date(req.query.endDate as string);
+    }
+
+    // Build pagination object from query params
+    const pagination: any = {};
+    if (req.query.page) {
+      pagination.page = parseInt(req.query.page as string);
+    }
+    if (req.query.limit) {
+      pagination.limit = parseInt(req.query.limit as string);
+    }
+
+    // Build sort object from query params
+    const sort: any = {};
+    if (req.query.sortField) {
+      sort.field = req.query.sortField;
+    }
+    if (req.query.sortOrder) {
+      sort.order = req.query.sortOrder;
+    }
+
+    const result = await invoiceRepository.getAllInvoices({
+      filters: Object.keys(filters).length > 0 ? filters : undefined,
+      pagination: Object.keys(pagination).length > 0 ? pagination : undefined,
+      sort: Object.keys(sort).length > 0 ? sort : undefined,
+    });
+
+    res.status(200).json({
+      data: result.invoices,
+      pagination: result.pagination,
+      success: true,
+    });
+    return;
+  } catch (error: any) {
+    console.error("Error fetching invoices:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch invoices",
+    });
+    return;
+  }
+}

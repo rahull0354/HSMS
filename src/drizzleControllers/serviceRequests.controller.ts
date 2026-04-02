@@ -24,6 +24,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
       beforeImages,
       estimatedPrice,
       commonServiceName,
+      paymentMethod,
     } = req.body;
 
     if (
@@ -35,6 +36,18 @@ export const createServiceRequest = async (req: Request, res: Response) => {
     ) {
       res.status(400).json({
         message: "Please provide all required fields",
+        success: false,
+      });
+      return;
+    }
+
+    // Validate payment method
+    const validPaymentMethods = ["upi", "cash", "bank_transfer", "card"];
+    const selectedPaymentMethod = paymentMethod || "upi"; 
+
+    if (!validPaymentMethods.includes(selectedPaymentMethod)) {
+      res.status(400).json({
+        message: `Invalid payment method. Must be one of: ${validPaymentMethods.join(", ")}`,
         success: false,
       });
       return;
@@ -267,7 +280,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
           priceBreakdown || `Service charge for ${category.name}`,
       },
       paymentStatus: "pending",
-      paymentMethod: "",
+      paymentMethod: selectedPaymentMethod,
       status: "requested",
       statusHistory: [
         {
@@ -1784,8 +1797,12 @@ export const completeService = async (req: Request, res: Response) => {
 
       console.log("🧾 [INVOICE] Line items created:", lineItems.length);
       console.log("🧾 [INVOICE] Customer ID:", serviceRequest.customerId, "Provider ID:", serviceRequest.serviceProviderId);
+      console.log("🧾 [INVOICE] Payment Method:", serviceRequest.paymentMethod);
 
       // Generate invoice with FINAL pricing
+      // For cash payments, invoice is already paid. For online, it's pending.
+      const isCashPayment = serviceRequest.paymentMethod === "cash";
+
       generatedInvoice = await invoiceRepository.createInvoice({
         requestId: serviceRequest.id,
         customerId: serviceRequest.customerId,
@@ -1801,9 +1818,13 @@ export const completeService = async (req: Request, res: Response) => {
         providerEarning,
         totalAmount: finalTotalWithTax,
         lineItems,
+        status: isCashPayment ? "paid" : "pending",
+        paymentMethod: isCashPayment ? "cash" : null,
+        paidAt: isCashPayment ? new Date() : undefined,
       });
 
       console.log("🧾 [INVOICE] Invoice created with ID:", generatedInvoice.id, "Number:", generatedInvoice.invoiceNumber);
+      console.log("🧾 [INVOICE] Payment method:", serviceRequest.paymentMethod, "Invoice status:", generatedInvoice.status);
 
       // Link invoice to service request
       await invoiceRepository.linkInvoiceToService(
@@ -1857,6 +1878,8 @@ export const completeService = async (req: Request, res: Response) => {
               invoiceNumber: generatedInvoice.invoiceNumber,
               totalAmount: generatedInvoice.totalAmount,
               status: generatedInvoice.status,
+              paymentMethod: generatedInvoice.paymentMethod,
+              paidAt: generatedInvoice.paidAt,
             }
           : null,
       },

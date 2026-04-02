@@ -13,6 +13,17 @@ export class ServiceRequestRepository {
     return result[0] || null;
   }
 
+  async findByIds(ids: string[]) {
+    if (!ids || ids.length === 0) {
+      return [];
+    }
+
+    return await db
+      .select()
+      .from(serviceRequests)
+      .where(inArray(serviceRequests.id, ids));
+  }
+
   async findByRequestIdAndCustomerId(reviewId: string, customerId: string) {
     const result = await db
       .select()
