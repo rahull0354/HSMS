@@ -384,6 +384,10 @@ export const notifications = pgTable(
     reviewId: uuid("review_id").references(() => reviews.id, {
       onDelete: "cascade",
     }),
+    payoutId: uuid("payout_id").references(() => provider_payouts.id, {
+      onDelete: "cascade",
+    }),
+    metadata: jsonb("metadata"),
     isRead: boolean("is_read").default(false).notNull(),
     readAt: timestamp("read_at"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -676,3 +680,67 @@ export const provider_payouts = pgTable(
     createdAtIdx: index("provider_payouts_created_at_idx").on(table.createdAt),
   }),
 );
+
+export const provider_bank_accounts = pgTable(
+  "provider_bank_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    providerId: uuid("provider_id")
+      .notNull()
+      .references(() => serviceProviders.id, { onDelete: "cascade" }),
+
+    // Bank account details
+    accountNumber: varchar("account_number", { length: 255 }).notNull(), // Should be encrypted in application layer
+    accountNumberLast4: varchar("account_number_last4", { length: 4 }).notNull(), // Last 4 digits for display
+    ifsc: varchar("ifsc", { length: 11 }).notNull(),
+    accountHolder: varchar("account_holder", { length: 255 }).notNull(),
+    bankName: varchar("bank_name", { length: 255 }).notNull(),
+    accountType: varchar("account_type", { length: 20 })
+      .default("savings")
+      .notNull(), // savings, current, etc.
+
+    // Verification status
+    isPrimary: boolean("is_primary").default(false).notNull(),
+    isVerified: boolean("is_verified").default(false).notNull(),
+    verificationStatus: varchar("verification_status", { length: 20 })
+      .default("pending")
+      .notNull(), // pending, verified, failed
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verificationReference: varchar("verification_reference", { length: 255 }),
+
+    // Additional details
+    upiId: varchar("upi_id", { length: 255 }), // For UPI-based payouts
+    branch: varchar("branch", { length: 255 }),
+    notes: text("notes"),
+
+    // Metadata
+    isActive: boolean("is_active").default(true).notNull(),
+    deactivationReason: text("deactivation_reason"),
+
+    // Timestamps
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (table) => ({
+    providerIdIdx: index("provider_bank_accounts_provider_id_idx").on(
+      table.providerId,
+    ),
+    primaryIdx: index("provider_bank_accounts_primary_idx").on(
+      table.providerId,
+      table.isPrimary,
+    ),
+    verificationStatusIdx: index(
+      "provider_bank_accounts_verification_status_idx",
+    ).on(table.verificationStatus),
+    createdAtIdx: index("provider_bank_accounts_created_at_idx").on(
+      table.createdAt,
+    ),
+  }),
+);
+
+export type NewProviderBankAccount = typeof provider_bank_accounts.$inferInsert;

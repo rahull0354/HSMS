@@ -20,6 +20,22 @@ import {
   unsuspendProvider,
   updateCategory,
 } from "#drizzleControllers/admin.controller.js";
+import {
+  bulkInitiatePayouts,
+  completePayout,
+  failPayout,
+  getAllPayouts,
+  getPayoutById,
+  getPendingPayouts,
+  getPayoutStats,
+  getProviderPayoutSummary,
+  initiatePayout,
+  processPayout,
+} from "#drizzleControllers/payout.controller.js";
+import {
+  getAllBankAccounts,
+  verifyBankAccount,
+} from "#drizzleControllers/bankAccount.controller.js";
 import { drizzleAuthMiddleware } from "#middlewares/drizzleAuth.middleware.js";
 import express from "express";
 
@@ -102,6 +118,70 @@ router.get(
   "/customer/:customerId",
   drizzleAuthMiddleware(["admin"]),
   getCustomerById,
+);
+
+// payout management routes
+router.get(
+  "/payouts/pending",
+  drizzleAuthMiddleware(["admin"]),
+  getPendingPayouts,
+);
+router.post(
+  "/payouts/initiate/:providerId",
+  drizzleAuthMiddleware(["admin"]),
+  initiatePayout,
+);
+router.post(
+  "/payouts/process/:payoutId",
+  drizzleAuthMiddleware(["admin"]),
+  processPayout,
+);
+router.post(
+  "/payouts/complete/:payoutId",
+  drizzleAuthMiddleware(["admin"]),
+  completePayout,
+);
+router.post(
+  "/payouts/fail/:payoutId",
+  drizzleAuthMiddleware(["admin"]),
+  failPayout,
+);
+router.get(
+  "/payouts/stats",
+  drizzleAuthMiddleware(["admin"]),
+  getPayoutStats,
+);
+router.get(
+  "/payouts",
+  drizzleAuthMiddleware(["admin"]),
+  getAllPayouts,
+);
+router.get(
+  "/payouts/:payoutId",
+  drizzleAuthMiddleware(["admin"]),
+  getPayoutById,
+);
+router.post(
+  "/payouts/bulk-initiate",
+  drizzleAuthMiddleware(["admin"]),
+  bulkInitiatePayouts,
+);
+router.get(
+  "/payouts/provider/:providerId/summary",
+  drizzleAuthMiddleware(["admin"]),
+  getProviderPayoutSummary,
+);
+
+// Bank account management routes (admin)
+router.get(
+  "/bank-accounts",
+  drizzleAuthMiddleware(["admin"]),
+  getAllBankAccounts,
+);
+router.patch(
+  "/bank-accounts/:bankAccountId/verify",
+  drizzleAuthMiddleware(["admin"]),
+  verifyBankAccount,
 );
 
 export default router;
