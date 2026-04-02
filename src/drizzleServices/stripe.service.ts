@@ -7,29 +7,35 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "", {
 });
 
 export class StripeService {
-  async createPaymentIntent(data: {
-    amount: number; // in paise/smallest unit
-    currency?: string;
-    invoiceId: string;
-    customerId: string;
-    description?: string;
-    metadata?: Record<string, string>;
-  }) {
+  async createPaymentIntent(
+    data: {
+      amount: number; // in paise/smallest unit
+      currency?: string;
+      invoiceId: string;
+      customerId: string;
+      description?: string;
+      metadata?: Record<string, string>;
+    },
+    idempotencyKey?: string // Optional idempotency key to prevent duplicates
+  ) {
     try {
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: data.amount,
-        currency: data.currency || "inr",
-        description:
-          data.description || `Payment for invoice ${data.invoiceId}`,
-        metadata: {
-          invoiceId: data.invoiceId,
-          customerId: data.customerId,
-          ...data.metadata,
+      const paymentIntent = await stripe.paymentIntents.create(
+        {
+          amount: data.amount,
+          currency: data.currency || "inr",
+          description:
+            data.description || `Payment for invoice ${data.invoiceId}`,
+          metadata: {
+            invoiceId: data.invoiceId,
+            customerId: data.customerId,
+            ...data.metadata,
+          },
+          automatic_payment_methods: {
+            enabled: true,
+          },
         },
-        automatic_payment_methods: {
-          enabled: true,
-        },
-      });
+        idempotencyKey ? { idempotencyKey } : undefined // Use idempotency key if provided
+      );
 
       return {
         success: true,
@@ -388,6 +394,26 @@ export class StripeService {
         success: false,
         error: error.message || "Failed to list charges",
       };
+    }
+  }
+
+  async retrievePaymentIntent(paymentIntentId: string){
+    try {
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
+       return {
+        success: true,
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id,
+        amount: paymentIntent.amount,
+        currency: paymentIntent.currency,
+        status: paymentIntent.status,
+       }
+    } catch (error: any) {
+      console.error("Stripe payment intent retrieval error: ", error);
+      return {
+        success: false,
+        error: error.message || "Failed to retrieve payment intent"
+      }
     }
   }
 }

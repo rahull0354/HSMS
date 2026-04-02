@@ -1738,21 +1738,24 @@ export const completeService = async (req: Request, res: Response) => {
       const laborCost = finalPriceAmount - platformFee; // What provider earns for service
       const providerEarning = laborCost + materialCostAmount; // Total provider earnings
 
-      // Tax (18% GST on subtotal + platform fee)
+      // Tax (18% GST on subtotal only - platform fee is not taxable)
       const taxRate = 18;
-      const taxableAmount = subTotal + platformFee; // Subtotal + platform fee are taxable
+      const taxableAmount = subTotal; // Only subtotal is taxable, not platform fee
       const taxAmount = (taxableAmount * taxRate) / 100;
 
       const finalTotalWithTax = subTotal + platformFee + taxAmount;
 
-      console.log("🧾 [INVOICE] Calculated values:");
-      console.log("  - Service price:", finalPriceAmount);
-      console.log("  - Material cost:", materialCostAmount);
-      console.log("  - Subtotal (service + materials):", subTotal);
-      console.log("  - Platform fee (15% of service):", platformFee);
-      console.log("  - Taxable amount (subtotal + platform fee):", taxableAmount);
-      console.log("  - Tax (18%):", taxAmount);
-      console.log("  - Final total (subtotal + platform fee + tax):", finalTotalWithTax);
+      // DETAILED LOGGING FOR TAX CALCULATION
+      console.log("🧾 [INVOICE] 🧾 TAX CALCULATION DEBUG 🧾");
+      console.log("🧾 [INVOICE] finalPriceAmount (service only):", finalPriceAmount);
+      console.log("🧾 [INVOICE] materialCostAmount:", materialCostAmount);
+      console.log("🧾 [INVOICE] subTotal (service + materials):", subTotal);
+      console.log("🧾 [INVOICE] platformFee:", platformFee);
+      console.log("🧾 [INVOICE] taxableAmount (should NOT include platform fee):", taxableAmount);
+      console.log("🧾 [INVOICE] taxRate:", taxRate + "%");
+      console.log("🧾 [INVOICE] taxAmount (18% of taxableAmount):", taxAmount);
+      console.log("🧾 [INVOICE] finalTotalWithTax:", finalTotalWithTax);
+      console.log("🧾 [INVOICE] ✅ VERIFICATION: taxableAmount", taxableAmount, "== subTotal", subTotal, "?", taxableAmount === subTotal);
 
       // Create line items based on FINAL price
       const lineItems = [
@@ -1792,6 +1795,17 @@ export const completeService = async (req: Request, res: Response) => {
           unitPrice: materialCostAmount,
           total: materialCostAmount,
           itemType: "material",
+        });
+      }
+
+      // Add tax as separate line item for transparency
+      if (taxAmount > 0) {
+        lineItems.push({
+          description: `GST (18% on service)`,
+          quantity: 1,
+          unitPrice: taxAmount,
+          total: taxAmount,
+          itemType: "tax",
         });
       }
 

@@ -567,6 +567,11 @@ export const payments = pgTable(
     ),
     statusIdx: index("payments_status_idx").on(table.status),
     createdAtIdx: index("payments_created_at_idx").on(table.createdAt),
+    // Partial unique index: Only ONE initiated/processing payment per invoice
+    invoicePendingUniqueIdx: index("payments_invoice_pending_unique_idx")
+      .on(table.invoiceId)
+      .where(sql`status IN ('initiated', 'processing')`)
+      .concurrently(),
   }),
 );
 
