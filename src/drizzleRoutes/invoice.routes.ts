@@ -1,4 +1,5 @@
 import {
+  getAllInvoices,
   getCustomerInvoices,
   getInvoiceById,
   getInvoiceByNumber,
@@ -22,6 +23,8 @@ router.get(
   drizzleAuthMiddleware(["serviceProvider"]),
   getProviderInvoices,
 );
+
+router.get("/all", drizzleAuthMiddleware(["admin"]), getAllInvoices);
 
 // Other invoice routes - SPECIFIC routes must come BEFORE parameterized routes
 router.get("/request/:requestId", getInvoicesByRequestId);

@@ -26,6 +26,7 @@
   "dependencies": {
     "@types/cors": "^2.8.19",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/stripe": "^8.0.416",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "drizzle-orm": "^0.45.1",
@@ -33,7 +34,8 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.6",
     "nodemailer": "^8.0.1",
-    "postgres": "^3.4.8"
+    "postgres": "^3.4.8",
+    "stripe": "^21.0.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

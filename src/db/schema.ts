@@ -503,3 +503,171 @@ export const invoiceLineItems = pgTable(
 );
 
 export type NewInvoiceLineItem = typeof invoiceLineItems.$inferInsert;
+
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+
+    // payment gateway details
+    gateway: varchar("gateway", { length: 50 }).notNull(),
+    gatewayPaymentId: varchar("gateway_payment_id", { length: 255 }).unique(),
+    gatewayOrderId: varchar("gateway_order_id", { length: 255 }),
+
+    // payment details
+    amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 10 }).default("INR").notNull(),
+    paymentMethod: varchar("payment_method", { length: 50 }),
+
+    //status tracking
+    status: varchar("status", { length: 50 }).notNull(),
+    failureReason: text("failure_reason"),
+
+    //gateway response
+    gatewayResponse: jsonb("gateway_response").$type<{
+      status?: string;
+      method?: string;
+      acquirer?: string;
+      bank?: string;
+      wallet?: string;
+      vpa?: string;
+      cardId?: string;
+    }>(),
+
+    // Metadata
+    clientIp: varchar("client_ip", { length: 50 }),
+    userAgent: text("user_agent"),
+    metadata: jsonb("metadata").$type<{
+      source?: string;
+      device?: string;
+      [key: string]: any;
+    }>(),
+
+    //timestamps
+    initiatedAt: timestamp("initiated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    refundedAt: timestamp("refunded_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    invoiceIdIdx: index("payments_invoice_id_idx").on(table.invoiceId),
+    gatewayPaymentIdIdx: index("payments_gateway_payment_id_idx").on(
+      table.gatewayPaymentId,
+    ),
+    statusIdx: index("payments_status_idx").on(table.status),
+    createdAtIdx: index("payments_created_at_idx").on(table.createdAt),
+  }),
+);
+
+export const refunds = pgTable(
+  "refunds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    paymentId: uuid("payment_id")
+      .notNull()
+      .references(() => payments.id, { onDelete: "restrict" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "restrict" }),
+
+    //refund details
+    refundId: varchar("refund_id", { length: 255 }).unique(),
+    amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+    reason: varchar("reason", { length: 255 }),
+    notes: text("notes"),
+
+    // status
+    status: varchar("status", { length: 50 }).notNull(),
+
+    //gateway response
+    gatewayResponse: jsonb("gateway_response"),
+
+    //processing details
+    processedBy: uuid("processed_by").references(() => admins.id),
+    approvedBy: uuid("approved_by").references(() => admins.id),
+
+    //timestamps
+    initiatedAt: timestamp("initiated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    paymentIdIdx: index("refunds_payment_id_idx").on(table.paymentId),
+    invoiceIdIdx: index("refunds_invoice_id_idx").on(table.invoiceId),
+    statusIdx: index("refunds_status_idx").on(table.status),
+  }),
+);
+
+export const provider_payouts = pgTable(
+  "provider_payouts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    providerId: uuid("provider_id")
+      .notNull()
+      .references(() => serviceProviders.id, { onDelete: "restrict" }),
+
+    //payout details
+    payoutGroupId: varchar("payout_group_id", { length: 255 }),
+    totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+    invoiceAmount: decimal("invoice_amount", {precision: 10, scale: 2}).notNull(),
+
+    //breakdown
+    invoiceIds: jsonb("invoice_ids").$type<string[]>(),
+
+    //status
+    status: varchar("status", { length: 50 }).notNull(),
+
+    //transaction details
+    utr: varchar("utr", { length: 255 }), // UPI Transaction reference
+    bankAccount: jsonb("bank_account").$type<{
+      accountNumber?: string;
+      ifsc?: string;
+      accountHolder?: string;
+      bankName?: string;
+    }>(),
+    transactionId: varchar("transaction_id", { length: 255 }),
+    notes: text("notes"),
+
+    //processing details
+    processedBy: uuid("processed_by").references(() => admins.id),
+    failureReason: text("failure_reason"),
+
+    //timestamps
+    initiatedAt: timestamp("initiated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    providerIdIdx: index("provider_payouts_provider_id_idx").on(
+      table.providerId,
+    ),
+    statusIdx: index("provider_payouts_status_idx").on(table.status),
+    createdAtIdx: index("provider_payouts_created_at_idx").on(table.createdAt),
+  }),
+);
