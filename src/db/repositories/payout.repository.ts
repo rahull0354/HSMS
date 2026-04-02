@@ -103,6 +103,7 @@ export class PayoutRepository {
       completedAt?: Date;
       failureReason?: string;
       bankAccount?: any;
+      notes?: string;
     },
   ) {
     const updateData: any = {
@@ -124,6 +125,10 @@ export class PayoutRepository {
 
     if (additionalData?.failureReason) {
       updateData.failureReason = additionalData.failureReason;
+    }
+
+    if (additionalData?.notes) {
+      updateData.notes = additionalData.notes;
     }
 
     if (status === "processing" && additionalData?.processedAt) {
