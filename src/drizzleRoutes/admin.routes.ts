@@ -26,10 +26,12 @@ import {
   failPayout,
   getAllPayouts,
   getPayoutById,
+  getPayoutPaymentDetails,
   getPendingPayouts,
   getPayoutStats,
   getProviderPayoutSummary,
   initiatePayout,
+  preparePayout,
   processPayout,
 } from "#drizzleControllers/payout.controller.js";
 import {
@@ -126,6 +128,11 @@ router.get(
   drizzleAuthMiddleware(["admin"]),
   getPendingPayouts,
 );
+router.get(
+  "/payouts/prepare/:providerId",
+  drizzleAuthMiddleware(["admin"]),
+  preparePayout,
+);
 router.post(
   "/payouts/initiate/:providerId",
   drizzleAuthMiddleware(["admin"]),
@@ -160,6 +167,11 @@ router.get(
   "/payouts/:payoutId",
   drizzleAuthMiddleware(["admin"]),
   getPayoutById,
+);
+router.get(
+  "/payouts/:payoutId/payment-details",
+  drizzleAuthMiddleware(["admin"]),
+  getPayoutPaymentDetails,
 );
 router.post(
   "/payouts/bulk-initiate",
