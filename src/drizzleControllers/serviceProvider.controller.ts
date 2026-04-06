@@ -7,6 +7,7 @@ import { serviceProviderRepository } from "#db/repositories/serviceProvider.repo
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
 import { reviewsRepository } from "#db/repositories/reviews.repository.js";
 import { serviceCategory } from "#db/repositories/serviceCategory.repository.js";
+import { bankAccountRepository } from "#db/repositories/bankAccount.repository.js";
 
 export const registerServiceProvider = async (req: Request, res: Response) => {
   try {
@@ -176,6 +177,7 @@ export const updateServiceProviderDetails = async (
       servicePricing,
       workingHours,
       serviceArea,
+      bankAccount, // NEW: Bank account details
     } = req.body;
 
     const provider =
@@ -361,6 +363,73 @@ export const updateServiceProviderDetails = async (
         if (Object.keys(serviceAreaObj).length > 0) {
           updateData.serviceArea = serviceAreaObj;
         }
+      }
+    }
+
+    // Handle bank account details - Create or update bank account
+    if (bankAccount !== undefined) {
+      try {
+        // Validate required bank account fields
+        if (!bankAccount.accountNumber || !bankAccount.ifsc || !bankAccount.bankName || !bankAccount.accountHolder) {
+          return res.status(400).json({
+            message: "Bank account requires accountNumber, ifsc, bankName, and accountHolder",
+            success: false,
+          });
+        }
+
+        // Mask account number (show only last 4 digits)
+        const accountNumberLast4 = bankAccount.accountNumber.slice(-4);
+
+        // Check if provider already has a primary bank account
+        const existingAccounts = await bankAccountRepository.getProviderBankAccounts(serviceProviderId);
+        const primaryAccount = existingAccounts.find((acc: any) => acc.isPrimary);
+
+        if (primaryAccount) {
+          // Update existing primary account
+          await bankAccountRepository.updateBankAccount(
+            primaryAccount.id,
+            serviceProviderId,
+            {
+              accountNumber: bankAccount.accountNumber,
+              ifsc: bankAccount.ifsc,
+              accountHolder: bankAccount.accountHolder,
+              bankName: bankAccount.bankName,
+              accountType: bankAccount.accountType || "savings",
+              upiId: bankAccount.upiId || null,
+              branch: bankAccount.branch || null,
+            }
+          );
+
+          console.log(`✅ Bank account updated for provider ${serviceProviderId}`);
+        } else {
+          // Create new bank account
+          await bankAccountRepository.addBankAccount({
+            providerId: serviceProviderId,
+            accountNumber: bankAccount.accountNumber,
+            ifsc: bankAccount.ifsc,
+            accountHolder: bankAccount.accountHolder,
+            bankName: bankAccount.bankName,
+            accountType: bankAccount.accountType || "savings",
+            upiId: bankAccount.upiId || null,
+            branch: bankAccount.branch || null,
+            isPrimary: true, // First account is always primary
+          });
+
+          console.log(`✅ New bank account created for provider ${serviceProviderId}`);
+        }
+
+        // Store bank account summary in provider profile (for quick access)
+        updateData.bankAccount = {
+          accountNumberLast4: accountNumberLast4,
+          ifsc: bankAccount.ifsc,
+          bankName: bankAccount.bankName,
+          accountHolder: bankAccount.accountHolder,
+          upiId: bankAccount.upiId || null,
+        };
+      } catch (bankError) {
+        console.error("Error saving bank account:", bankError);
+        // Don't fail the entire update if bank account fails
+        // Just log the error and continue
       }
     }
 

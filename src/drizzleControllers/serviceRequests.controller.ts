@@ -1647,22 +1647,39 @@ export const completeService = async (req: Request, res: Response) => {
     if (finalPrice) {
       finalPriceAmount = Number(finalPrice);
 
+      // Get service category to use category-specific commission
+      const category = await serviceCategory.findById(serviceRequest.serviceCategoryId);
+
+      // Calculate platform fee using category-specific settings
+      const platformFee = calculateAdminCommissionFromCategory(
+        finalPriceAmount,
+        category?.adminCommission
+      );
+
+      // Extract commission details for display
+      let commissionRate = 0;
+      let commissionType = "fixed";
+      if (category?.adminCommission) {
+        commissionType = category.adminCommission.type || "fixed";
+        if (commissionType === "percentage" || commissionType === "hybrid") {
+          commissionRate = category.adminCommission.percentage || 0;
+        }
+      }
+
       // Calculate new pricing details based on final price
       const existingPricingDetails = serviceRequest.pricingDetails as any || {};
-      const platformFeeRate = 15;
-      const platformFee = (finalPriceAmount * platformFeeRate) / 100;
 
-      // Store final price WITH updated pricing details
+      // Store final price WITH updated pricing details (platform fee charged separately)
       await serviceRequestRepository.updateFinalPrice(
         requestIdValue,
         finalPriceAmount,
         {
-          providerCharge: finalPriceAmount - platformFee,
-          adminCharge: platformFee,
+          providerCharge: finalPriceAmount, // Provider gets FULL service price
+          adminCharge: platformFee, // Platform fee charged separately to customer
           ...existingPricingDetails,
           total: finalPriceAmount,
-          commissionRate: platformFeeRate,
-          commissionType: "percentage",
+          commissionRate: commissionRate,
+          commissionType: commissionType,
         },
       );
 
@@ -1733,9 +1750,9 @@ export const completeService = async (req: Request, res: Response) => {
 
       console.log("🧾 [INVOICE] Commission applied - Type:", category?.adminCommission?.type, "Rate:", commissionRate + "%", "Fee: ₹" + platformFee);
 
-      // Provider earnings = service price - platform fee + material cost
-      // Note: Provider should be reimbursed for materials they purchased
-      const laborCost = finalPriceAmount - platformFee; // What provider earns for service
+      // Provider earnings = full service price + material cost
+      // Note: Platform fee is charged separately to customer, NOT deducted from provider
+      const laborCost = finalPriceAmount; // Provider earns FULL service price
       const providerEarning = laborCost + materialCostAmount; // Total provider earnings
 
       // Tax (18% GST on subtotal only - platform fee is not taxable)

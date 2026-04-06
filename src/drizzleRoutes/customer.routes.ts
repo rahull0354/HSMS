@@ -73,6 +73,6 @@ router.put(
   updateNotificationPreferences
 );
 
-router.get("/:id", drizzleAuthMiddleware(["serviceProvider", "admin"]), getCustomerById);
+router.get("/:customerId", drizzleAuthMiddleware(["serviceProvider", "admin"]), getCustomerById);
 
 export default router;

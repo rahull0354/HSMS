@@ -86,6 +86,9 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
       return;
     }
 
+    // Get total amount from invoice
+    const totalAmount = parseFloat(invoice.totalAmount);
+
     // Check if there's already a pending/intiated payment for this invoice
     const existingPayments = await paymentRepository.getPaymentsByInvoice(invoiceId);
     const pendingPayment = existingPayments.find(
@@ -101,29 +104,56 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
         )
 
         if (stripeResult.success && stripeResult.clientSecret) {
-          res.status(200).json({
-            message: "Payment already initiated",
-            success: true,
-            data: {
-              paymentId: pendingPayment.id,
-              clientSecret: stripeResult.clientSecret,
-              paymentIntentId: stripeResult.paymentIntentId,
-              amount: pendingPayment.amount,
-              currency: pendingPayment.currency || "INR",
-              status: pendingPayment.status || stripeResult.status,
-              publishableKey: STRIPE_PUBLISHABLE_KEY,
-            }
-          })
+          // Check if the payment intent is in a usable state
+          const usableStates = ['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing'];
+
+          if (usableStates.includes(stripeResult.status)) {
+            console.log("Payment intent is in usable state:", stripeResult.status);
+            res.status(200).json({
+              message: "Payment already initiated",
+              success: true,
+              data: {
+                paymentId: pendingPayment.id,
+                clientSecret: stripeResult.clientSecret,
+                paymentIntentId: stripeResult.paymentIntentId,
+                amount: pendingPayment.amount,
+                currency: pendingPayment.currency || "INR",
+                status: pendingPayment.status || stripeResult.status,
+                publishableKey: STRIPE_PUBLISHABLE_KEY,
+              }
+            })
+            return; // Important: return after sending response
+          } else {
+            // Payment intent is in a bad state (canceled, succeeded, failed, etc.)
+            console.log("Payment intent is in unusable state:", stripeResult.status);
+            console.log("Cancelling old payment and creating new one");
+
+            // Cancel the old payment in database
+            await paymentRepository.updatePaymentStatus(
+              pendingPayment.id,
+              "failed",
+              { failureReason: `Payment intent is in ${stripeResult.status} state. Creating new payment intent.` }
+            );
+            // Continue to create new payment intent below
+          }
         } else {
-          // stripe retrieval failed - create new payment intent
+          // stripe retrieval failed - cancel this payment and create new one
           console.error("Failed to retrieve from stripe: ", stripeResult.error);
+          console.log("Cancelling orphaned payment record:", pendingPayment.id);
+
+          // Cancel the old payment in database
+          await paymentRepository.updatePaymentStatus(
+            pendingPayment.id,
+            "failed",
+            { failureReason: "Payment intent not found in Stripe. Orphaned record cancelled." }
+          );
         }
-        
       }
     }
 
-    // Get total amount from invoice
-    const totalAmount = parseFloat(invoice.totalAmount);
+    // Note: Orphaned Stripe intent check removed to prevent require() errors
+    // The existing payment check above handles most cases
+    // If needed, we can add a proper Stripe list call using the stripeService
 
     // Validate amount
     const amountInPaise = toSmallestCurrencyUnit(totalAmount);
@@ -136,7 +166,10 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
       return;
     }
 
-    // Create payment intent with Stripe (with idempotency key to prevent duplicates)
+    // Create payment intent with Stripe
+    // Use unique idempotency key: invoiceId + timestamp to allow retries
+    const uniqueIdempotencyKey = `${invoice.id}-${Date.now()}`;
+
     const result = await stripeService.createPaymentIntent({
       amount: amountInPaise,
       currency: "inr",
@@ -147,7 +180,7 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
         invoiceNumber: invoice.invoiceNumber,
         customerEmail: (req as any).user.email,
       },
-    }, invoice.id); // Use invoice ID as idempotency key
+    }, uniqueIdempotencyKey); // Use unique idempotency key
 
     if (!result.success) {
       res.status(500).json({
@@ -158,6 +191,11 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
     }
 
     // Create payment record with duplicate check
+    console.log(`[PAYMENT] Creating payment record in database...`);
+    console.log(`[PAYMENT] Invoice ID: ${invoice.id}`);
+    console.log(`[PAYMENT] Payment Intent ID: ${result.paymentIntentId}`);
+    console.log(`[PAYMENT] Amount: ${totalAmount}`);
+
     const payment = await paymentRepository.createPaymentWithDuplicateCheck({
       invoiceId: invoice.id,
       gateway: "stripe",
@@ -172,6 +210,24 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
         invoiceNumber: invoice.invoiceNumber,
       },
     });
+
+    console.log(`[PAYMENT] ✅ Payment record created successfully: ${payment.id}`);
+    console.log(`[PAYMENT] Payment gatewayOrderId: ${payment.gatewayOrderId}`);
+
+    // Verify payment was created successfully
+    if (!payment || !payment.id) {
+      console.error(`[PAYMENT] ❌ Failed to create payment record`);
+      throw new Error("Payment record creation failed");
+    }
+
+    // Double-check the payment can be retrieved
+    const verifyPayment = await paymentRepository.getPaymentById(payment.id);
+    if (!verifyPayment) {
+      console.error(`[PAYMENT] ❌ Payment created but cannot be retrieved: ${payment.id}`);
+      throw new Error("Payment record verification failed");
+    }
+
+    console.log(`[PAYMENT] ✅ Payment record verified: ${verifyPayment.id}`);
 
     res.status(200).json({
       message: "Payment intent created successfully",

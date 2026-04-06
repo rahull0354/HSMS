@@ -3,6 +3,7 @@ import { payoutRepository } from "#db/repositories/payout.repository.js";
 import { invoiceRepository } from "#db/repositories/invoice.repository.js";
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
 import { serviceProviderRepository } from "#db/repositories/serviceProvider.repository.js";
+import { bankAccountRepository } from "#db/repositories/bankAccount.repository.js";
 import * as notificationService from "#drizzleServices/notification.service.js";
 
 // Helper function to handle route params that can be string or string array
@@ -10,14 +11,17 @@ function getRouteParam(param: string | string[]): string {
   return Array.isArray(param) ? param[0] : param;
 }
 
-/**
- * Get all pending payouts for all providers
- * GET /api/admin/payouts/pending
- */
+// Helper function to generate payment instructions
+function getPaymentInstructions(paymentMethod: string, paymentDetails: string, amount: string): string {
+  if (paymentMethod === 'upi') {
+    return `Transfer ₹${amount} to UPI ID: ${paymentDetails}. Open your UPI app (GPay, PhonePe, Paytm) and enter the UPI ID to make the payment.`;
+  } else {
+    return `Transfer ₹${amount} to bank account: ${paymentDetails}. Use NEFT, RTGS, IMPS, or your bank's online transfer service.`;
+  }
+}
+
 export const getPendingPayouts = async (req: Request, res: Response) => {
   try {
-    console.log("📊 [PAYOUT] Fetching pending payouts for all providers");
-
     const pendingPayouts = await payoutRepository.getPendingPayouts();
 
     res.status(200).json({
@@ -38,6 +42,149 @@ export const getPendingPayouts = async (req: Request, res: Response) => {
 };
 
 /**
+ * Prepare payout for a specific provider (show all details before payout)
+ * GET /api/admin/payouts/prepare/:providerId
+ */
+export const preparePayout = async (req: Request, res: Response) => {
+  try {
+    const { providerId } = req.params;
+    const providerIdValue = getRouteParam(providerId);
+
+    console.log(`📋 [PAYOUT] Preparing payout for provider: ${providerId}`);
+
+    // Get pending invoices for this provider
+    const allPendingPayouts = await payoutRepository.getPendingPayouts();
+    const providerPending = allPendingPayouts.find(
+      (p: any) => p.providerId === providerId,
+    );
+
+    if (!providerPending) {
+      res.status(404).json({
+        message: "No pending payouts found for this provider",
+        success: false,
+      });
+      return;
+    }
+
+    // Get provider details
+    const provider = await serviceProviderRepository.findById(providerIdValue);
+    if (!provider) {
+      res.status(404).json({
+        message: "Provider not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Check for duplicate invoices (invoices already in existing payouts)
+    const existingPayoutsData = await payoutRepository.getPayoutsByProvider(providerIdValue);
+    const existingInvoiceIds = new Set<string>();
+
+    existingPayoutsData.payouts.forEach((payout: any) => {
+      if (payout.invoiceIds && Array.isArray(payout.invoiceIds)) {
+        payout.invoiceIds.forEach((id: string) => existingInvoiceIds.add(id));
+      }
+    });
+
+    const duplicateInvoices = providerPending.invoiceIds.filter((id: string) =>
+      existingInvoiceIds.has(id)
+    );
+
+    // Get provider's payment details
+    const bankAccounts = await bankAccountRepository.getProviderBankAccounts(providerIdValue);
+    const primaryAccount = await bankAccountRepository.getPrimaryBankAccount(providerIdValue);
+
+    // Filter to show only verified and active accounts
+    const availableAccounts = bankAccounts.filter(
+      (account: any) => account.isVerified && account.isActive
+    );
+
+    console.log(`✅ [PAYOUT] Payout preparation complete for provider ${providerId}`);
+    console.log(`   Amount: ₹${providerPending.totalAmount}`);
+    console.log(`   Invoices: ${providerPending.invoiceCount}`);
+    console.log(`   Bank Accounts: ${availableAccounts.length}`);
+
+    res.status(200).json({
+      message: "Payout details prepared successfully",
+      success: true,
+      data: {
+        provider: {
+          id: provider.id,
+          name: provider.name,
+          email: provider.email,
+          phone: provider.phone,
+        },
+        payout: {
+          totalAmount: providerPending.totalAmount,
+          invoiceCount: providerPending.invoiceCount,
+          invoiceIds: providerPending.invoiceIds,
+          invoices: providerPending.invoices,
+          notes: `Payout for ${providerPending.invoiceCount} invoices`,
+        },
+        paymentDetails: {
+          // Separate bank transfer and UPI options for clearer UX
+          bankTransferOptions: availableAccounts
+            .filter((a: any) => a.accountNumber && a.ifsc)
+            .map((account: any) => ({
+              id: account.id,
+              type: 'bank_account',
+              bankName: account.bankName,
+              accountNumberLast4: account.accountNumberLast4,
+              ifsc: account.ifsc,
+              accountHolder: account.accountHolder,
+              accountType: account.accountType,
+              isPrimary: account.isPrimary,
+            })),
+          upiOptions: availableAccounts
+            .filter((a: any) => a.upiId)
+            .map((account: any) => ({
+              id: `${account.id}-upi`,
+              bankAccountId: account.id,
+              type: 'upi',
+              upiId: account.upiId,
+              accountHolder: account.accountHolder,
+              isPrimary: account.isPrimary,
+            })),
+          // Primary accounts (auto-selected if admin doesn't choose)
+          primaryBankAccount: primaryAccount && primaryAccount.accountNumber ? {
+            id: primaryAccount.id,
+            bankName: primaryAccount.bankName,
+            accountNumberLast4: primaryAccount.accountNumberLast4,
+            ifsc: primaryAccount.ifsc,
+            accountHolder: primaryAccount.accountHolder,
+          } : null,
+          primaryUpiId: primaryAccount && primaryAccount.upiId ? {
+            id: `${primaryAccount.id}-upi`,
+            upiId: primaryAccount.upiId,
+          } : null,
+          // Quick checks
+          hasBankAccount: availableAccounts.some((a: any) => a.accountNumber),
+          hasUpiId: availableAccounts.some((a: any) => a.upiId),
+          bankAccountCount: availableAccounts.filter((a: any) => a.accountNumber).length,
+          upiIdCount: availableAccounts.filter((a: any) => a.upiId).length,
+        },
+        warnings: {
+          hasDuplicateInvoices: duplicateInvoices.length > 0,
+          duplicateInvoiceIds: duplicateInvoices,
+          duplicateInvoiceCount: duplicateInvoices.length,
+          message: duplicateInvoices.length > 0
+            ? `Warning: ${duplicateInvoices.length} invoice(s) are already included in existing payouts`
+            : null,
+        },
+      },
+    });
+    return;
+  } catch (error: any) {
+    console.error("Error preparing payout:", error);
+    res.status(500).json({
+      message: error.message || "Failed to prepare payout",
+      success: false,
+    });
+    return;
+  }
+};
+
+/**
  * Initiate payout for a specific provider
  * POST /api/admin/payouts/initiate/:providerId
  */
@@ -47,9 +194,11 @@ export const initiatePayout = async (req: Request, res: Response) => {
     const providerIdValue = getRouteParam(providerId);
 
     const adminId = (req as any).user.id;
-    const { notes, bankAccount } = req.body;
+    const { notes, bankAccount, paymentAccountId, paymentMethod } = req.body;
 
     console.log(`💰 [PAYOUT] Initiating payout for provider: ${providerId}`);
+    console.log(`   Payment Method: ${paymentMethod || 'auto'}`);
+    console.log(`   Payment Account ID: ${paymentAccountId || 'auto'}`);
 
     // Get pending invoices for this provider
     const allPendingPayouts = await payoutRepository.getPendingPayouts();
@@ -75,8 +224,238 @@ export const initiatePayout = async (req: Request, res: Response) => {
       return;
     }
 
-    // Use provided bank account or get from provider profile
-    const payoutBankAccount = bankAccount || (provider as any).bankAccount;
+    // Get bank account details based on payment method selection
+    let payoutBankAccount = bankAccount || (provider as any).bankAccount;
+    let selectedPaymentType = 'bank_account'; // Default
+    let selectedPaymentDetails = '';
+
+    if (paymentAccountId) {
+      // Check if it's a UPI ID selection (format: "account-id-upi")
+      if (paymentAccountId.endsWith('-upi')) {
+        // Extract actual bank account ID
+        const actualBankAccountId = paymentAccountId.replace('-upi', '');
+
+        const selectedAccount = await bankAccountRepository.getBankAccountById(actualBankAccountId);
+        if (!selectedAccount) {
+          res.status(404).json({
+            message: "Selected bank account not found",
+            success: false,
+          });
+          return;
+        }
+
+        // Verify account belongs to this provider
+        if (selectedAccount.providerId !== providerIdValue) {
+          res.status(403).json({
+            message: "Bank account does not belong to this provider",
+            success: false,
+          });
+          return;
+        }
+
+        // Verify account is verified and active
+        if (!selectedAccount.isVerified || !selectedAccount.isActive) {
+          res.status(400).json({
+            message: "Selected bank account is not verified or active",
+            success: false,
+          });
+          return;
+        }
+
+        // Verify it has a UPI ID
+        if (!selectedAccount.upiId) {
+          res.status(400).json({
+            message: "Selected bank account does not have a UPI ID",
+            success: false,
+          });
+          return;
+        }
+
+        // Create bank account object for payout (UPI payment)
+        payoutBankAccount = {
+          accountNumberLast4: selectedAccount.accountNumberLast4,
+          ifsc: selectedAccount.ifsc,
+          accountHolder: selectedAccount.accountHolder,
+          bankName: selectedAccount.bankName,
+          upiId: selectedAccount.upiId,
+          accountType: selectedAccount.accountType,
+        };
+
+        selectedPaymentType = 'upi';
+        selectedPaymentDetails = selectedAccount.upiId;
+
+        console.log(`✅ [PAYOUT] Using UPI ID: ${selectedAccount.upiId} (${selectedAccount.accountHolder})`);
+      } else {
+        // It's a bank account selection
+        const selectedAccount = await bankAccountRepository.getBankAccountById(paymentAccountId);
+        if (!selectedAccount) {
+          res.status(404).json({
+            message: "Selected bank account not found",
+            success: false,
+          });
+          return;
+        }
+
+        // Verify account belongs to this provider
+        if (selectedAccount.providerId !== providerIdValue) {
+          res.status(403).json({
+            message: "Bank account does not belong to this provider",
+            success: false,
+          });
+          return;
+        }
+
+        // Verify account is verified and active
+        if (!selectedAccount.isVerified || !selectedAccount.isActive) {
+          res.status(400).json({
+            message: "Selected bank account is not verified or active",
+            success: false,
+          });
+          return;
+        }
+
+        // Create bank account object for payout (Bank transfer)
+        payoutBankAccount = {
+          accountNumberLast4: selectedAccount.accountNumberLast4,
+          ifsc: selectedAccount.ifsc,
+          accountHolder: selectedAccount.accountHolder,
+          bankName: selectedAccount.bankName,
+          upiId: selectedAccount.upiId,
+          accountType: selectedAccount.accountType,
+        };
+
+        selectedPaymentType = 'bank_account';
+        selectedPaymentDetails = `${selectedAccount.bankName} - XXXX-XXXX-XXXX-${selectedAccount.accountNumberLast4}`;
+
+        console.log(`✅ [PAYOUT] Using bank account: ${selectedAccount.bankName} - XXXX-XXXX-XXXX-${selectedAccount.accountNumberLast4}`);
+      }
+    } else if (paymentMethod) {
+      // Use payment method to select primary account of that type
+      const allAccounts = await bankAccountRepository.getProviderBankAccounts(providerIdValue);
+      const verifiedAccounts = allAccounts.filter((a: any) => a.isVerified && a.isActive);
+
+      if (paymentMethod === 'upi') {
+        // Find primary UPI ID
+        const primaryUpiAccount = verifiedAccounts.find((a: any) => a.upiId && a.isPrimary);
+
+        if (!primaryUpiAccount) {
+          // Try to find any UPI ID
+          const anyUpiAccount = verifiedAccounts.find((a: any) => a.upiId);
+
+          if (!anyUpiAccount) {
+            res.status(404).json({
+              message: "No UPI ID found for this provider",
+              success: false,
+            });
+            return;
+          }
+
+          // Use this UPI ID
+          payoutBankAccount = {
+            accountNumberLast4: anyUpiAccount.accountNumberLast4,
+            ifsc: anyUpiAccount.ifsc,
+            accountHolder: anyUpiAccount.accountHolder,
+            bankName: anyUpiAccount.bankName,
+            upiId: anyUpiAccount.upiId,
+            accountType: anyUpiAccount.accountType,
+          };
+
+          selectedPaymentType = 'upi';
+          selectedPaymentDetails = anyUpiAccount.upiId;
+
+          console.log(`✅ [PAYOUT] Using UPI ID: ${anyUpiAccount.upiId} (${anyUpiAccount.accountHolder})`);
+        } else {
+          payoutBankAccount = {
+            accountNumberLast4: primaryUpiAccount.accountNumberLast4,
+            ifsc: primaryUpiAccount.ifsc,
+            accountHolder: primaryUpiAccount.accountHolder,
+            bankName: primaryUpiAccount.bankName,
+            upiId: primaryUpiAccount.upiId,
+            accountType: primaryUpiAccount.accountType,
+          };
+
+          selectedPaymentType = 'upi';
+          selectedPaymentDetails = primaryUpiAccount.upiId;
+
+          console.log(`✅ [PAYOUT] Using primary UPI ID: ${primaryUpiAccount.upiId} (${primaryUpiAccount.accountHolder})`);
+        }
+      } else {
+        // Default to bank transfer
+        const primaryBankAccount = await bankAccountRepository.getPrimaryBankAccount(providerIdValue);
+
+        if (!primaryBankAccount) {
+          res.status(404).json({
+            message: "No bank account found for this provider",
+            success: false,
+          });
+          return;
+        }
+
+        payoutBankAccount = {
+          accountNumberLast4: primaryBankAccount.accountNumberLast4,
+          ifsc: primaryBankAccount.ifsc,
+          accountHolder: primaryBankAccount.accountHolder,
+          bankName: primaryBankAccount.bankName,
+          upiId: primaryBankAccount.upiId,
+          accountType: primaryBankAccount.accountType,
+        };
+
+        selectedPaymentType = 'bank_account';
+        selectedPaymentDetails = `${primaryBankAccount.bankName} - XXXX-XXXX-XXXX-${primaryBankAccount.accountNumberLast4}`;
+
+        console.log(`✅ [PAYOUT] Using primary bank account: ${primaryBankAccount.bankName} - XXXX-XXXX-XXXX-${primaryBankAccount.accountNumberLast4}`);
+      }
+    } else {
+      // Auto-select: Use primary bank account
+      const primaryAccount = await bankAccountRepository.getPrimaryBankAccount(providerIdValue);
+      if (primaryAccount) {
+        payoutBankAccount = {
+          accountNumberLast4: primaryAccount.accountNumberLast4,
+          ifsc: primaryAccount.ifsc,
+          accountHolder: primaryAccount.accountHolder,
+          bankName: primaryAccount.bankName,
+          upiId: primaryAccount.upiId,
+          accountType: primaryAccount.accountType,
+        };
+
+        selectedPaymentType = primaryAccount.upiId ? 'upi' : 'bank_account';
+        selectedPaymentDetails = primaryAccount.upiId || `${primaryAccount.bankName} - XXXX-XXXX-XXXX-${primaryAccount.accountNumberLast4}`;
+
+        console.log(`✅ [PAYOUT] Auto-selected primary payment method: ${selectedPaymentType}`);
+        console.log(`   Details: ${selectedPaymentDetails}`);
+      }
+    }
+
+    // 🔍 DUPLICATE CHECK: Check if any invoices are already in existing payouts
+    const existingPayoutsData = await payoutRepository.getPayoutsByProvider(providerIdValue);
+    const existingInvoiceIds = new Set<string>();
+
+    existingPayoutsData.payouts.forEach((payout: any) => {
+      if (payout.invoiceIds && Array.isArray(payout.invoiceIds)) {
+        payout.invoiceIds.forEach((id: string) => existingInvoiceIds.add(id));
+      }
+    });
+
+    const duplicateInvoices = providerPending.invoiceIds.filter((id: string) =>
+      existingInvoiceIds.has(id)
+    );
+
+    if (duplicateInvoices.length > 0) {
+      console.warn(`⚠️ [PAYOUT] Duplicate invoice(s) detected: ${duplicateInvoices.length}`);
+      console.warn(`   Duplicate Invoice IDs:`, duplicateInvoices);
+
+      // Return error with details
+      res.status(400).json({
+        message: "Cannot create payout: Some invoices are already included in existing payouts",
+        success: false,
+        data: {
+          duplicateInvoiceIds: duplicateInvoices,
+          duplicateInvoiceCount: duplicateInvoices.length,
+          message: `${duplicateInvoices.length} invoice(s) are already in existing payouts`,
+        },
+      });
+      return;
+    }
 
     // Calculate invoice amount (sum of invoice totals)
     const invoiceAmount = providerPending.invoices.reduce(
@@ -84,7 +463,7 @@ export const initiatePayout = async (req: Request, res: Response) => {
       0,
     );
 
-    // Create payout record
+    // Create payout record with payment method details
     const payout = await payoutRepository.createPayout({
       providerId: providerIdValue,
       payoutGroupId: `PG-${Date.now()}`,
@@ -93,7 +472,7 @@ export const initiatePayout = async (req: Request, res: Response) => {
       invoiceIds: providerPending.invoiceIds,
       status: "pending",
       bankAccount: payoutBankAccount,
-      notes: notes || `Payout for ${providerPending.invoiceCount} invoices`,
+      notes: notes || `Payout for ${providerPending.invoiceCount} invoices via ${selectedPaymentType === 'upi' ? 'UPI' : 'Bank Transfer'}`,
       processedBy: adminId,
     });
 
@@ -102,6 +481,8 @@ export const initiatePayout = async (req: Request, res: Response) => {
     );
     console.log(`   Amount: ₹${providerPending.totalAmount}`);
     console.log(`   Invoices: ${providerPending.invoiceCount}`);
+    console.log(`   Payment Method: ${selectedPaymentType}`);
+    console.log(`   Payment Details: ${selectedPaymentDetails}`);
 
     // Send notification to provider
     try {
@@ -129,6 +510,11 @@ export const initiatePayout = async (req: Request, res: Response) => {
           name: provider.name,
           email: provider.email,
           phone: provider.phone,
+        },
+        payment: {
+          method: selectedPaymentType,
+          details: selectedPaymentDetails,
+          instructions: getPaymentInstructions(selectedPaymentType, selectedPaymentDetails, providerPending.totalAmount),
         },
         breakdown: {
           invoiceCount: providerPending.invoiceCount,
@@ -197,6 +583,85 @@ export const processPayout = async (req: Request, res: Response) => {
 
     console.log(`✅ [PAYOUT] Payout ${payoutId} marked as processing`);
 
+    // Extract payment details
+    const payoutBankAccount = updatedPayout.bankAccount as any;
+    const amount = parseFloat(payout.totalAmount);
+
+    // Determine payment method and create detailed instructions
+    let paymentDetails: any = {
+      method: 'unknown',
+      instructions: '',
+      quickActions: [],
+    };
+
+    if (payoutBankAccount?.upiId) {
+      // UPI Payment
+      const upiId = payoutBankAccount.upiId;
+      const providerName = payoutBankAccount.accountHolder || provider?.name || 'Service Provider';
+      const upiLink = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`;
+      const upiDeepLink = `tez://upi/pay?pa=${upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`;
+      const phonePeLink = `phonepe://pay?pa=${upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`;
+      const paytmLink = `paytmmp://pay?pa=${upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`;
+
+      paymentDetails = {
+        method: 'upi',
+        upiId: upiId,
+        accountHolder: payoutBankAccount.accountHolder,
+        amount: amount,
+        instructions: `Transfer ₹${amount} to UPI ID: ${upiId}`,
+        quickActions: [
+          {
+            label: 'Open GPay',
+            url: upiDeepLink,
+            icon: '📱',
+          },
+          {
+            label: 'Open PhonePe',
+            url: phonePeLink,
+            icon: '📱',
+          },
+          {
+            label: 'Open Paytm',
+            url: paytmLink,
+            icon: '📱',
+          },
+          {
+            label: 'Copy UPI ID',
+            action: 'copy',
+            value: upiId,
+            icon: '📋',
+          },
+        ],
+        upiLink: upiLink,
+        copyText: upiId,
+      };
+    } else if (payoutBankAccount?.accountNumberLast4 && payoutBankAccount?.ifsc) {
+      // Bank Transfer
+      paymentDetails = {
+        method: 'bank_transfer',
+        bankName: payoutBankAccount.bankName,
+        accountNumberLast4: payoutBankAccount.accountNumberLast4,
+        accountHolder: payoutBankAccount.accountHolder,
+        ifsc: payoutBankAccount.ifsc,
+        amount: amount,
+        instructions: `Transfer ₹${amount} to ${payoutBankAccount.bankName} account ending in ${payoutBankAccount.accountNumberLast4}`,
+        quickActions: [
+          {
+            label: 'Copy Account Number',
+            action: 'copy_account',
+            icon: '📋',
+            note: '(Full account number will be shown after clicking)',
+          },
+          {
+            label: 'Copy IFSC',
+            action: 'copy',
+            value: payoutBankAccount.ifsc,
+            icon: '📋',
+          },
+        ],
+      };
+    }
+
     // Send notification to provider
     try {
       await notificationService.notifyProviderPayoutProcessed(
@@ -213,7 +678,7 @@ export const processPayout = async (req: Request, res: Response) => {
     }
 
     res.status(200).json({
-      message: "Payout processed successfully. Please initiate bank transfer.",
+      message: "Payout processed successfully. Please complete the payment using the details below.",
       success: true,
       data: {
         payout: updatedPayout,
@@ -225,9 +690,14 @@ export const processPayout = async (req: Request, res: Response) => {
               phone: provider.phone,
             }
           : null,
+        paymentDetails: paymentDetails,
         bankAccount: updatedPayout.bankAccount,
-        instructions:
-          "Transfer the amount via NEFT/IMPS/UPI and complete with UTR",
+        nextSteps: [
+          `1. ${paymentDetails.instructions}`,
+          '2. Complete the payment using your preferred method',
+          '3. Copy the UTR/reference number from your payment confirmation',
+          '4. Click "Complete Payout" and enter the UTR to finish',
+        ],
       },
     });
     return;
@@ -235,6 +705,143 @@ export const processPayout = async (req: Request, res: Response) => {
     console.error("Error processing payout:", error);
     res.status(500).json({
       message: error.message || "Failed to process payout",
+      success: false,
+    });
+    return;
+  }
+};
+
+/**
+ * Get payout payment details (full account details for admin to make payment)
+ * GET /api/admin/payouts/:payoutId/payment-details
+ */
+export const getPayoutPaymentDetails = async (req: Request, res: Response) => {
+  try {
+    const { payoutId } = req.params;
+    const payoutIdValue = getRouteParam(payoutId);
+
+    console.log(`💰 [PAYOUT] Getting payment details for: ${payoutIdValue}`);
+
+    // Get payout details
+    const payout = await payoutRepository.getPayoutById(payoutIdValue);
+    if (!payout) {
+      res.status(404).json({
+        message: "Payout not found",
+        success: false,
+      });
+      return;
+    }
+
+    // Get provider's bank account details
+    const bankAccount = payout.bankAccount as any;
+    const amount = parseFloat(payout.totalAmount);
+
+    // Get full bank account details from repository if we have an account ID
+    let fullBankAccountDetails = null;
+
+    if (bankAccount?.upiId || (bankAccount?.accountNumberLast4 && bankAccount?.ifsc)) {
+      // Try to get the full bank account details
+      const allAccounts = await bankAccountRepository.getProviderBankAccounts(payout.providerId);
+
+      // Find matching account
+      const matchingAccount = allAccounts.find((account: any) => {
+        if (bankAccount.upiId) {
+          return account.upiId === bankAccount.upiId;
+        }
+        if (bankAccount.accountNumberLast4 && bankAccount.ifsc) {
+          return account.accountNumberLast4 === bankAccount.accountNumberLast4 &&
+                 account.ifsc === bankAccount.ifsc;
+        }
+        return false;
+      });
+
+      if (matchingAccount) {
+        fullBankAccountDetails = {
+          bankName: matchingAccount.bankName,
+          accountNumber: matchingAccount.accountNumber, // Full account number
+          accountNumberLast4: matchingAccount.accountNumberLast4,
+          ifsc: matchingAccount.ifsc,
+          accountHolder: matchingAccount.accountHolder,
+          accountType: matchingAccount.accountType,
+          upiId: matchingAccount.upiId,
+          branch: matchingAccount.branch,
+        };
+      }
+    }
+
+    // Create payment details
+    let paymentDetails: any = {
+      amount: amount,
+      currency: 'INR',
+      method: 'unknown',
+    };
+
+    if (fullBankAccountDetails?.upiId) {
+      // UPI Payment Details
+      const providerName = fullBankAccountDetails.accountHolder || 'Service Provider';
+
+      paymentDetails = {
+        method: 'upi',
+        amount: amount,
+        currency: 'INR',
+        upiId: fullBankAccountDetails.upiId,
+        accountHolder: fullBankAccountDetails.accountHolder,
+        // UPI Deep Links
+        upiLink: `upi://pay?pa=${fullBankAccountDetails.upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`,
+        gpayLink: `tez://upi/pay?pa=${fullBankAccountDetails.upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`,
+        phonePeLink: `phonepe://pay?pa=${fullBankAccountDetails.upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`,
+        paytmLink: `paytmmp://pay?pa=${fullBankAccountDetails.upiId}&pn=${encodeURIComponent(providerName)}&am=${amount}&cu=INR`,
+        // Copy options
+        copyText: fullBankAccountDetails.upiId,
+        instructions: `Pay ₹${amount} to UPI ID: ${fullBankAccountDetails.upiId}`,
+      };
+    } else if (fullBankAccountDetails?.accountNumber) {
+      // Bank Transfer Details
+      paymentDetails = {
+        method: 'bank_transfer',
+        amount: amount,
+        currency: 'INR',
+        bankName: fullBankAccountDetails.bankName,
+        accountNumber: fullBankAccountDetails.accountNumber, // Full account number
+        accountNumberLast4: fullBankAccountDetails.accountNumberLast4,
+        accountNumberMasked: `XXXX-XXXX-XXXX-${fullBankAccountDetails.accountNumberLast4}`,
+        ifsc: fullBankAccountDetails.ifsc,
+        accountHolder: fullBankAccountDetails.accountHolder,
+        accountType: fullBankAccountDetails.accountType,
+        branch: fullBankAccountDetails.branch,
+        // Copy options
+        copyAccountNumber: fullBankAccountDetails.accountNumber,
+        copyIfsc: fullBankAccountDetails.ifsc,
+        instructions: `Transfer ₹${amount} to ${fullBankAccountDetails.bankName} account`,
+        // NEFT/RTGS/IMPS details
+        neftEnabled: true,
+        rtgsEnabled: true,
+        impsEnabled: true,
+      };
+    }
+
+    console.log(`✅ [PAYOUT] Payment details retrieved for ${payoutIdValue}`);
+    console.log(`   Method: ${paymentDetails.method}`);
+    console.log(`   Amount: ₹${amount}`);
+
+    res.status(200).json({
+      message: "Payment details retrieved successfully",
+      success: true,
+      data: {
+        payout: {
+          id: payout.id,
+          totalAmount: payout.totalAmount,
+          status: payout.status,
+        },
+        paymentDetails: paymentDetails,
+        warning: "This information is sensitive. Only share it with authorized personnel.",
+      },
+    });
+    return;
+  } catch (error: any) {
+    console.error("Error getting payout payment details:", error);
+    res.status(500).json({
+      message: error.message || "Failed to get payment details",
       success: false,
     });
     return;

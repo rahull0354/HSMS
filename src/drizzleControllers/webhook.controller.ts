@@ -68,6 +68,18 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
         await handlePaymentFailure(event.data.object as any);
         break;
 
+      case "payment_intent.created":
+        await handlePaymentIntentCreated(event.data.object as any);
+        break;
+
+      case "charge.succeeded":
+        await handleChargeSucceeded(event.data.object as any);
+        break;
+
+      case "charge.updated":
+        await handleChargeUpdated(event.data.object as any);
+        break;
+
       case "charge.refund.updated":
         await handleRefundUpdate(event.data.object as any);
         break;
@@ -99,6 +111,9 @@ export const handleStripeWebhook = async (req: Request, res: Response) => {
 async function handlePaymentSuccess(paymentIntent: any) {
   try {
     console.log(`Processing payment success: ${paymentIntent.id}`);
+    console.log(`   Amount: ${paymentIntent.amount / 100} ${paymentIntent.currency.toUpperCase()}`);
+    console.log(`   Invoice ID from metadata: ${paymentIntent.metadata?.invoiceId}`);
+    console.log(`   Customer ID from metadata: ${paymentIntent.metadata?.customerId}`);
 
     // Find payment by gateway order ID
     const payment = await paymentRepository.getPaymentByOrderId(
@@ -106,13 +121,47 @@ async function handlePaymentSuccess(paymentIntent: any) {
     );
 
     if (!payment) {
-      console.error(`Payment not found for order ID: ${paymentIntent.id}`);
+      console.error(`❌ Payment not found for order ID: ${paymentIntent.id}`);
+      console.error(`   This usually means the payment record was not created in the database`);
+      console.error(`   when the Stripe payment intent was created.`);
+
+      // Try to find by invoice ID as fallback
+      if (paymentIntent.metadata?.invoiceId) {
+        console.log(`   Attempting to find payment by invoice ID: ${paymentIntent.metadata.invoiceId}`);
+        const invoicePayments = await paymentRepository.getPaymentsByInvoice(paymentIntent.metadata.invoiceId);
+        console.log(`   Found ${invoicePayments.length} payment(s) for this invoice`);
+
+        if (invoicePayments.length > 0) {
+          const latestPayment = invoicePayments[0]; // Get the most recent payment
+          console.log(`   Updating latest payment: ${latestPayment.id} with order ID: ${paymentIntent.id}`);
+
+          // Update this payment with the correct order ID
+          await paymentRepository.updatePaymentStatus(latestPayment.id, "completed", {
+            gatewayPaymentId: paymentIntent.id,
+            gatewayResponse: paymentIntent,
+            completedAt: new Date(paymentIntent.created * 1000),
+          });
+
+          // Update invoice status
+          await invoiceRepository.updateInvoiceStatus(latestPayment.invoiceId, "paid", {
+            paymentMethod: paymentIntent.payment_method_types[0] || "card",
+            paymentId: paymentIntent.id,
+            transactionId: paymentIntent.charges?.data[0]?.id || paymentIntent.id,
+            paidAt: new Date(),
+          });
+
+          console.log(`✓ Payment ${latestPayment.id} marked as completed (fallback method)`);
+          return;
+        }
+      }
+
+      console.error(`   No payment found. Cannot complete payment.`);
       return;
     }
 
     // Skip if already completed
     if (payment.status === "completed") {
-      console.log(`Payment already completed: ${payment.id}`);
+      console.log(`✓ Payment already completed: ${payment.id}`);
       return;
     }
 
@@ -133,7 +182,8 @@ async function handlePaymentSuccess(paymentIntent: any) {
       paidAt: new Date(),
     });
 
-    console.log(`Payment ${payment.id} marked as completed`);
+    console.log(`✓ Payment ${payment.id} marked as completed`);
+    console.log(`✓ Invoice ${payment.invoiceId} marked as paid`);
   } catch (error: any) {
     console.error("Error handling payment success:", error);
     throw error;
@@ -227,5 +277,54 @@ async function handleRefundProcessed(charge: any) {
   } catch (error: any) {
     console.error("Error handling refund processed:", error);
     throw error;
+  }
+}
+
+async function handlePaymentIntentCreated(paymentIntent: any) {
+  try {
+    console.log(`Payment intent created: ${paymentIntent.id}`);
+
+    // Log the creation but don't take any action
+    // The payment record should already exist from when we created the intent
+    const payment = await paymentRepository.getPaymentByOrderId(paymentIntent.id);
+
+    if (!payment) {
+      console.warn(`⚠️ Payment record not found for newly created intent: ${paymentIntent.id}`);
+      console.warn(`   Invoice ID from metadata: ${paymentIntent.metadata?.invoiceId}`);
+      console.warn(`   This could indicate a race condition or missing payment creation`);
+    } else {
+      console.log(`✓ Payment record found for intent: ${paymentIntent.id}`);
+    }
+  } catch (error: any) {
+    console.error("Error handling payment intent created:", error);
+    // Don't throw - this is just informational
+  }
+}
+
+async function handleChargeSucceeded(charge: any) {
+  try {
+    console.log(`Charge succeeded: ${charge.id}`);
+
+    // Charge succeeded is usually followed by payment_intent.succeeded
+    // We don't need to take action here as payment_intent.succeeded will handle it
+    const paymentIntentId = charge.payment_intent;
+    console.log(`   Associated payment intent: ${paymentIntentId}`);
+  } catch (error: any) {
+    console.error("Error handling charge succeeded:", error);
+    // Don't throw - this is just informational
+  }
+}
+
+async function handleChargeUpdated(charge: any) {
+  try {
+    console.log(`Charge updated: ${charge.id}`);
+
+    // Log charge updates but don't take action
+    // The payment_intent.succeeded event will handle the actual payment completion
+    console.log(`   Charge status: ${charge.status}`);
+    console.log(`   Payment intent: ${charge.payment_intent}`);
+  } catch (error: any) {
+    console.error("Error handling charge updated:", error);
+    // Don't throw - this is just informational
   }
 }
