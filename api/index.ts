@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import { startJobs } from "#config/jobs.js";
 
 import customerRoutes from "#routes/customer.routes.js";
 import serviceProviderRoutes from "#routes/serviceProvider.routes.js";
@@ -18,16 +17,36 @@ import drizzlePaymentRoutes from "#drizzleRoutes/payment.routes.js";
 import { handleStripeWebhook } from "#drizzleControllers/webhook.controller.js";
 
 const app = express();
-const port = process.env.port ?? "9000";
+
+// Get allowed origins from environment
+const getAllowedOrigins = () => {
+  const frontendUrl = process.env.FRONTEND_URL;
+  const vercelUrl = process.env.VERCEL_URL;
+
+  const origins = [
+    "http://localhost:3000",
+    "https://fix-bee-gamma.vercel.app"
+  ];
+
+  if (frontendUrl) {
+    origins.push(frontendUrl);
+  }
+
+  if (vercelUrl) {
+    origins.push(`https://${vercelUrl}`);
+  }
+
+  return origins;
+};
 
 const corsOptions = {
-  origin: ["http://localhost:3000"],
+  origin: getAllowedOrigins(),
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// Middleware to capture raw body for webhooks
+// Stripe webhook middleware - must be before JSON parsing
 app.use('/api/payments/webhooks/stripe', express.raw({ type: 'application/json' }), (req, res, next) => {
   (req as any).rawBody = req.body;
   next();
@@ -37,16 +56,17 @@ app.use(cors(corsOptions));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Webhook route (after raw body capture middleware)
+// Webhook route
 app.post('/api/payments/webhooks/stripe', handleStripeWebhook);
 
+// MongoDB routes
 app.use("/customer", customerRoutes);
 app.use("/serviceProvider", serviceProviderRoutes);
 app.use("/admin", adminRoutes);
 app.use("/serviceRequest", serviceRequestRoutes);
 app.use("/reviews", reviewRoutes);
 
-// drizzle routes
+// PostgreSQL routes (Drizzle)
 app.use("/customers", drizzleCustomerRoutes);
 app.use("/providers", drizzleServiceProviderRoutes);
 app.use("/author", drizzleAdminRoutes);
@@ -55,12 +75,30 @@ app.use("/review", drizzleReviewRoutes);
 app.use("/invoices", drizzleInvoiceRoutes);
 app.use("/payments", drizzlePaymentRoutes);
 
-// Only start server if not in Vercel environment
-if (process.env.NODE_ENV !== "vercel" && process.env.VERCEL !== "1") {
-  app.listen(port, () => {
-    console.log(`Server started on http://localhost:${port}`);
-    startJobs();
+// Health check
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || "development"
   });
-}
+});
 
-// stripe listen --forward-to localhost:3001/api/payments/webhooks/stripe
+// Error handling
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: process.env.NODE_ENV === 'production'
+      ? 'Internal Server Error'
+      : err.message,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
+});
+
+// 404 handler
+app.use((req: express.Request, res: express.Response) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Export for Vercel serverless
+export default app;
