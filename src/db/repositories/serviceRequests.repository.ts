@@ -39,6 +39,21 @@ export class ServiceRequestRepository {
     return result[0] || null;
   }
 
+  async findByRequestIdAndProviderId(reviewId: string, serviceProviderId: string) {
+    const result = await db
+      .select()
+      .from(serviceRequests)
+      .where(
+        and(
+          eq(serviceRequests.id, reviewId),
+          eq(serviceRequests.serviceProviderId, serviceProviderId),
+        ),
+      )
+      .limit(1);
+
+    return result[0] || null;
+  }
+
   async create(data: NewServiceRequest) {
     const result = await db.insert(serviceRequests).values(data).returning();
 

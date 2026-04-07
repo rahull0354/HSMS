@@ -288,6 +288,39 @@ export const serviceRequests = pgTable(
     cancellationReason: text("cancellation_reason"),
     cancelledBy: varchar("cancelled_by", { length: 50 }),
     cancelledAt: timestamp("cancelled_at"),
+    // Provider reschedule tracking
+    rescheduleRequests: jsonb("reschedule_requests")
+      .$type<
+        Array<{
+          id: string;
+          requestedBy: "customer" | "service_provider";
+          requestedAt: Date;
+          oldSchedule: {
+            date: Date;
+            timeSlot: "morning" | "afternoon" | "evening";
+          };
+          newSchedule: {
+            date: Date;
+            timeSlot: "morning" | "afternoon" | "evening";
+          };
+          reason: string;
+          reasonCode: "cannot_reach_location" | "traffic_emergency" | "personal_emergency" | "customer_unavailable" | "weather_conditions" | "other";
+          status: "pending" | "approved" | "rejected" | "cancelled";
+          approvedBy?: "customer" | "auto_approved";
+          approvedAt?: Date;
+          rejectionReason?: string;
+          proof?: string;
+          expiresAt?: Date; // Reschedule request expiration
+        }>
+      >()
+      .default(sql`'[]'::jsonb`),
+    rescheduleCount: integer("reschedule_count").default(0).notNull(),
+    lastRescheduleAt: timestamp("last_reschedule_at"),
+    // Provider reschedule window tracking
+    slotStartTime: timestamp("slot_start_time"), // When service slot started
+    rescheduleWindowEndsAt: timestamp("reschedule_window_ends_at"), // 1 hour after slot ends
+    missedService: boolean("missed_service").default(false).notNull(), // Provider didn't reach location
+    missedServiceReportedAt: timestamp("missed_service_reported_at"), // When provider reported missed service
     isRecurring: boolean("is_recurring").default(false).notNull(),
     recurringPattern: jsonb("recurring_pattern").$type<{
       frequency?: "weekly" | "biweekly" | "monthly";
