@@ -6,7 +6,9 @@ import {
   getAvailableRequests,
   getMyAssignedRequests,
   getMyServiceRequests,
-  getRequestById,
+  getRequestByIdForCustomer,
+  getRequestByIdForProvider,
+  providerRescheduleServiceRequest,
   rescheduleServiceRequest,
   startService,
 } from "#drizzleControllers/serviceRequests.controller.js";
@@ -60,11 +62,22 @@ router.patch(
   drizzleAuthMiddleware(["customer"]),
   rescheduleServiceRequest,
 );
+router.post(
+  "/provider/reschedule/:requestId",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  providerRescheduleServiceRequest,
+);
 
 router.get(
   "/customer/service-request/:requestId",
   drizzleAuthMiddleware(["customer", "admin"]),
-  getRequestById,
+  getRequestByIdForCustomer,
+);
+
+router.get(
+  "/provider/service-request/:requestId",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  getRequestByIdForProvider,
 );
 
 export default router;

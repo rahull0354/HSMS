@@ -9,6 +9,8 @@ import {
   handleReschedulingNotifications,
 } from "#drizzleServices/notification.service.js";
 import { invoiceRepository } from "#db/repositories/invoice.repository.js";
+import { notificationRepository } from "#db/repositories/notification.repository.js";
+
 
 export const createServiceRequest = async (req: Request, res: Response) => {
   try {
@@ -425,7 +427,7 @@ export const getMyServiceRequests = async (req: Request, res: Response) => {
   }
 };
 
-export const getRequestById = async (req: Request, res: Response) => {
+export const getRequestByIdForCustomer = async (req: Request, res: Response) => {
   try {
     const customerId = (req as any).user.id;
     const { requestId } = req.params;
@@ -452,6 +454,29 @@ export const getRequestById = async (req: Request, res: Response) => {
       });
       return;
     }
+
+    if (serviceRequest.customerId) {
+    const customer = await customerRepository.findById(serviceRequest.customerId);
+    if (customer) {
+      (serviceRequest as any).customer = {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+      };
+    }
+  }
+
+  if (serviceRequest.serviceProviderId) {
+    const provider = await serviceProviderRepository.findById(serviceRequest.serviceProviderId);
+    if (provider) {
+      (serviceRequest as any).serviceProvider = {
+        id: provider.id,
+        name: provider.name,
+        email: provider.email,
+      };
+    }
+  }
 
     const now = new Date();
     const scheduleDate = new Date(serviceRequest.schedule.date);
@@ -494,27 +519,7 @@ export const getRequestById = async (req: Request, res: Response) => {
     res.status(200).json({
       message: "Service Request Retrieved Successfully",
       success: true,
-      data: {
-        request: serviceRequest,
-        timing: {
-          scheduleDate: serviceRequest.schedule.date,
-          timeSlot: serviceRequest.schedule.timeSlot,
-          preferredTime: serviceRequest.schedule.preferredTime,
-          daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
-          isUrgent: daysRemaining <= 2 && daysRemaining > 0,
-          isOverdue: daysRemaining <= 0,
-        },
-        status: statusInfo,
-        pricing: {
-          estimated: serviceRequest.estimatedPrice,
-          final: serviceRequest.finalPrice || 0,
-          paymentStatus: serviceRequest.paymentStatus,
-          breakdown: serviceRequest.pricingDetails,
-        },
-        history: {
-          statusHistory: serviceRequest.statusHistory,
-        },
-      },
+      data: serviceRequest,
     });
     return;
   } catch (error) {
@@ -526,6 +531,112 @@ export const getRequestById = async (req: Request, res: Response) => {
     return;
   }
 };
+
+export const getRequestByIdForProvider = async (req: Request, res: Response) => {
+  try {
+    const serviceProviderId = (req as any).user.id;
+    const { requestId } = req.params;
+    const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId;
+
+    if (!requestId) {
+      res.status(400).json({
+        message: "Request ID is required",
+        success: false,
+      });
+      return;
+    }
+
+    const serviceRequest =
+      await serviceRequestRepository.findByRequestIdAndProviderId(
+        requestIdValue,
+        serviceProviderId,
+      );
+
+    if (!serviceRequest) {
+      res.status(404).json({
+        message: "Service Request Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    if (serviceRequest.customerId) {
+    const customer = await customerRepository.findById(serviceRequest.customerId);
+    if (customer) {
+      (serviceRequest as any).customer = {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+      };
+    }
+  }
+
+  if (serviceRequest.serviceProviderId) {
+    const provider = await serviceProviderRepository.findById(serviceRequest.serviceProviderId);
+    if (provider) {
+      (serviceRequest as any).serviceProvider = {
+        id: provider.id,
+        name: provider.name,
+        email: provider.email,
+      };
+    }
+  }
+
+    const now = new Date();
+    const scheduleDate = new Date(serviceRequest.schedule.date);
+    const timeRemaining = scheduleDate.getTime() - now.getTime();
+    const daysRemaining = Math.ceil(timeRemaining / (1000 * 60 * 60 * 24));
+
+    let statusInfo = {
+      current: serviceRequest.status,
+      canCancel: false,
+      canModify: false,
+      canReschedule: false,
+      message: "",
+    };
+
+    switch (serviceRequest.status) {
+      case "requested":
+        statusInfo.canCancel = true;
+        statusInfo.canModify = true;
+        statusInfo.canReschedule = true;
+        statusInfo.message =
+          "Your request is waiting for a service provider to accept.";
+        break;
+      case "assigned":
+        statusInfo.canCancel = true;
+        statusInfo.canReschedule = true;
+        statusInfo.message = `Assigned to ${(serviceRequest.serviceProviderId as any)?.name || "a provider"}. Contact them to discuss details.`;
+        break;
+      case "in_progress":
+        statusInfo.message = "Service is currently in progress.";
+        break;
+      case "completed":
+        statusInfo.message =
+          "Service has been completed. Please rate your provider.";
+        break;
+      case "cancelled":
+        statusInfo.message = `Request cancelled. Reason: ${serviceRequest.cancellationReason || "Not specified"}`;
+        break;
+    }
+
+    res.status(200).json({
+      message: "Service Request Retrieved Successfully",
+      success: true,
+      data: serviceRequest,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error Fetching Service Request BY ID",
+      success: false,
+    });
+    return;
+  }
+};
+
 
 export const cancelServiceRequest = async (req: Request, res: Response) => {
   try {
@@ -980,18 +1091,38 @@ export const getAvailableRequests = async (req: Request, res: Response) => {
 
     // filter by provider's service area (nested structure)
     const providerServiceAreas = provider.serviceArea || [];
+
     const providerCities = providerServiceAreas
-      .map((area: any) => area.city?.toLowerCase())
+      .map((area: any) => {
+        // Handle both old format (string) and new format (object with city)
+        if (typeof area === 'string') {
+          return area.toLowerCase();
+        }
+        if (area && typeof area === 'object' && area.city) {
+          return area.city.toLowerCase();
+        }
+        return null;
+      })
       .filter(Boolean);
+
     const providerAreas = providerServiceAreas
-      .flatMap((area: any) => area.areas || [])
-      .map((area: any) => area.toLowerCase());
+      .flatMap((area: any) => {
+        // Handle both old format (array of areas) and new format (object with areas array)
+        if (Array.isArray(area)) {
+          return area.map((a: any) => a.toLowerCase());
+        }
+        if (area && typeof area === 'object' && area.areas) {
+          return area.areas.map((a: any) => a.toLowerCase());
+        }
+        return [];
+      })
+      .filter(Boolean);
 
     if (providerCities.length > 0 || providerAreas.length > 0) {
       const allserviceAreas = [
         ...new Set([...providerCities, ...providerAreas]),
       ];
-      filters.cities = allserviceAreas;
+      filters.cities = allserviceAreas; 
     }
 
     // filter by city if provided
@@ -2030,3 +2161,558 @@ function calculateAdminCommissionFromCategory(
 
   return adminCharge;
 }
+
+export const providerRescheduleServiceRequest = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const providerId = (req as any).user.id;
+    const { requestId } = req.params;
+    const requestIdValue = Array.isArray(requestId) ? requestId[0] : requestId;
+    const { schedule, reason, reasonCode, proof } = req.body;
+
+    console.log(`🔄 [RESCHEDULE] Provider ${providerId} attempting to reschedule request ${requestIdValue}`);
+
+    // Validate required fields
+    if (!requestId) {
+      res.status(400).json({
+        message: "Request ID is required",
+        success: false,
+      });
+      return;
+    }
+
+    if (!schedule || !schedule.date || !schedule.timeSlot) {
+      res.status(400).json({
+        message: "New schedule details are required (date, timeSlot)",
+        success: false,
+      });
+      return;
+    }
+
+    if (!reason || !reasonCode) {
+      res.status(400).json({
+        message: "Reason and reason code are required",
+        success: false,
+      });
+      return;
+    }
+
+    // Validate reason code
+    const validReasonCodes = [
+      "cannot_reach_location",
+      "traffic_emergency",
+      "personal_emergency",
+      "customer_unavailable",
+      "weather_conditions",
+      "other"
+    ];
+
+    if (!validReasonCodes.includes(reasonCode)) {
+      res.status(400).json({
+        message: `Invalid reason code. Must be one of: ${validReasonCodes.join(", ")}`,
+        success: false,
+      });
+      return;
+    }
+
+    // Get service request
+    const serviceRequest = await serviceRequestRepository.findById(requestIdValue);
+    if (!serviceRequest) {
+      res.status(404).json({
+        message: "Service Request Not Found",
+        success: false,
+      });
+      return;
+    }
+
+    // Verify this request belongs to the provider
+    if (serviceRequest.serviceProviderId !== providerId) {
+      res.status(403).json({
+        message: "This request is not assigned to you",
+        success: false,
+      });
+      return;
+    }
+
+    // Check current status - only allow reschedule for assigned/in_progress
+    if (!["assigned", "in_progress"].includes(serviceRequest.status)) {
+      res.status(400).json({
+        message: `Cannot reschedule request with status: ${serviceRequest.status}`,
+        success: false,
+        currentStatus: serviceRequest.status,
+        canReschedule: false,
+      });
+      return;
+    }
+
+    // Get current schedule
+    const currentSchedule = serviceRequest.schedule as any;
+    const currentScheduleDate = new Date(currentSchedule.date);
+
+    // Define time slots
+    const timeSlotHours = {
+      morning: { start: 6, end: 12 },  // 6 AM - 12 PM
+      afternoon: { start: 12, end: 17 }, // 12 PM - 5 PM
+      evening: { start: 17, end: 21 }     // 5 PM - 9 PM
+    };
+
+    const currentSlot = timeSlotHours[currentSchedule.timeSlot as keyof typeof timeSlotHours];
+    if (!currentSlot) {
+      res.status(400).json({
+        message: "Invalid current time slot",
+        success: false,
+      });
+      return;
+    }
+
+    // Calculate slot end time
+    const slotEndTime = new Date(currentScheduleDate);
+    slotEndTime.setHours(currentSlot.end, 0, 0, 0);
+
+    // Calculate 1 hour before slot ends
+    const oneHourBeforeSlotEnds = new Date(slotEndTime);
+    oneHourBeforeSlotEnds.setHours(oneHourBeforeSlotEnds.getHours() - 1);
+
+    // Calculate 1 hour after slot ends (reschedule window end)
+    const oneHourAfterSlotEnds = new Date(slotEndTime);
+    oneHourAfterSlotEnds.setHours(oneHourAfterSlotEnds.getHours() + 1);
+
+    const now = new Date();
+
+    // Scenario 1: During service slot (before 1 hour window)
+    if (now < oneHourBeforeSlotEnds && serviceRequest.status === "in_progress") {
+      console.log(`🔄 [RESCHEDULE] During slot reschedule - more than 1 hour before slot ends`);
+
+      // Check if already has too many reschedules
+      const rescheduleCount = serviceRequest.rescheduleCount || 0;
+      if (rescheduleCount >= 3) {
+        res.status(400).json({
+          message: "Maximum reschedule limit reached (3 times)",
+          success: false,
+          rescheduleCount: rescheduleCount,
+        });
+        return;
+      }
+
+      // Validate new schedule date
+      const newScheduleDate = new Date(schedule.date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (newScheduleDate < today) {
+        res.status(400).json({
+          message: "New schedule date must be today or in the future",
+          success: false,
+        });
+        return;
+      }
+
+      // Create reschedule request
+      const rescheduleId = `reschedule-${Date.now()}`;
+      const rescheduleRequest = {
+        id: rescheduleId,
+        requestedBy: "service_provider",
+        requestedAt: new Date(),
+        oldSchedule: currentSchedule,
+        newSchedule: {
+          date: newScheduleDate,
+          timeSlot: schedule.timeSlot,
+          preferredTime: schedule.preferredTime,
+        },
+        reason: reason,
+        reasonCode: reasonCode,
+        status: "approved", // Auto-approve during slot
+        approvedBy: "auto_approved",
+        approvedAt: new Date(),
+        proof: proof,
+      };
+
+      // Update service request
+      const updatedRequest = await serviceRequestRepository.update(requestIdValue, {
+        schedule: {
+          date: newScheduleDate,
+          timeSlot: schedule.timeSlot,
+          preferredTime: schedule.preferredTime || currentSchedule.preferredTime,
+        },
+        rescheduleCount: (serviceRequest.rescheduleCount || 0) + 1,
+        lastRescheduleAt: new Date(),
+        rescheduleRequests: [
+          ...(serviceRequest.rescheduleRequests as any || []),
+          rescheduleRequest,
+        ],
+      });
+
+      await serviceRequestRepository.addStatusHistory(requestIdValue, {
+        status: serviceRequest.status,
+        note: `Provider rescheduled during service slot. Reason: ${reason}`,
+        updatedBy: "service_provider",
+      });
+
+      // Send notification to customer
+      try {
+        const customer = await customerRepository.findById(serviceRequest.customerId);
+        const provider = await serviceProviderRepository.findById(providerId);
+
+        if (customer) {
+          await handleReschedulingNotifications(
+            customer.id,
+            customer.name,
+            providerId,
+            provider?.name || "Service Provider",
+            serviceRequest.id,
+            serviceRequest.serviceTitle,
+          );
+          console.log(`✅ [RESCHEDULE] Notification sent to customer: ${customer.name}`);
+        }
+      } catch (notifError) {
+        console.error("Failed to send reschedule notification:", notifError);
+        // Don't fail the reschedule if notification fails
+      }
+
+      console.log(`✅ [RESCHEDULE] Request rescheduled during slot`);
+
+      res.status(200).json({
+        message: "Service request rescheduled successfully",
+        success: true,
+        data: {
+          request: {
+            id: updatedRequest?.id,
+            serviceTitle: updatedRequest?.serviceTitle,
+            status: updatedRequest?.status,
+          },
+          oldSchedule: currentSchedule,
+          newSchedule: {
+            date: newScheduleDate,
+            timeSlot: schedule.timeSlot,
+          },
+          rescheduleId: rescheduleId,
+          rescheduleType: "during_slot",
+        },
+      });
+      return;
+    }
+
+    // Scenario 2: After slot ended (within 1 hour window)
+    if (now >= slotEndTime && now <= oneHourAfterSlotEnds) {
+      console.log(`🔄 [RESCHEDULE] After-slot reschedule window active`);
+
+      // Check if this is a "cannot reach location" scenario
+      if (reasonCode !== "cannot_reach_location" && reasonCode !== "customer_unavailable") {
+        res.status(400).json({
+          message: "After slot ended, only 'cannot_reach_location' or 'customer_unavailable' reasons are allowed",
+          success: false,
+          allowedReasons: ["cannot_reach_location", "customer_unavailable"],
+        });
+        return;
+      }
+
+      // Mark as missed service
+      await serviceRequestRepository.update(requestIdValue, {
+        missedService: true,
+        missedServiceReportedAt: new Date(),
+      });
+
+      // Create reschedule request
+      const rescheduleId = `reschedule-${Date.now()}`;
+      const rescheduleRequest = {
+        id: rescheduleId,
+        requestedBy: "service_provider",
+        requestedAt: new Date(),
+        oldSchedule: currentSchedule,
+        newSchedule: {
+          date: new Date(schedule.date),
+          timeSlot: schedule.timeSlot,
+          preferredTime: schedule.preferredTime,
+        },
+        reason: reason,
+        reasonCode: reasonCode,
+        status: "approved", // Auto-approve within 1 hour window
+        approvedBy: "auto_approved",
+        approvedAt: new Date(),
+        proof: proof,
+        expiresAt: oneHourAfterSlotEnds, // Request expires at window end
+      };
+
+      // Update service request
+      const updatedRequest = await serviceRequestRepository.update(requestIdValue, {
+        schedule: {
+          date: new Date(schedule.date),
+          timeSlot: schedule.timeSlot,
+          preferredTime: schedule.preferredTime || currentSchedule.preferredTime,
+        },
+        rescheduleCount: (serviceRequest.rescheduleCount || 0) + 1,
+        lastRescheduleAt: new Date(),
+        rescheduleRequests: [
+          ...(serviceRequest.rescheduleRequests as any || []),
+          rescheduleRequest,
+        ],
+      });
+
+      await serviceRequestRepository.addStatusHistory(requestIdValue, {
+        status: serviceRequest.status,
+        note: `Provider rescheduled after slot (missed service). Reason: ${reason}`,
+        updatedBy: "service_provider",
+      });
+
+      // Send notifications to both customer and provider
+      try {
+        const customer = await customerRepository.findById(serviceRequest.customerId);
+        if (customer) {
+          const provider = await serviceProviderRepository.findById(providerId);
+
+          await handleReschedulingNotifications(
+            customer.id,
+            customer.name,
+            providerId,
+            provider?.name || "Service Provider",
+            serviceRequest.id,
+            serviceRequest.serviceTitle,
+          );
+          console.log(`✅ [RESCHEDULE] Notifications sent to customer: ${customer.name}`);
+        }
+      } catch (notifError) {
+        console.error("Failed to send reschedule notifications:", notifError);
+        // Don't fail the reschedule if notification fails
+      }
+
+      console.log(`✅ [RESCHEDULE] Request rescheduled after slot (missed service)`);
+
+      res.status(200).json({
+        message: "Service request rescheduled successfully (missed service)",
+        success: true,
+        data: {
+          request: {
+            id: updatedRequest?.id,
+            serviceTitle: updatedRequest?.serviceTitle,
+            status: updatedRequest?.status,
+          },
+          oldSchedule: currentSchedule,
+          newSchedule: {
+            date: new Date(schedule.date),
+            timeSlot: schedule.timeSlot,
+          },
+          rescheduleId: rescheduleId,
+          rescheduleType: "after_slot",
+          missedService: true,
+        },
+      });
+      return;
+    }
+
+    // Scenario 3: Too late to reschedule (after 1 hour window)
+    if (now > oneHourAfterSlotEnds) {
+      console.log(`❌ [RESCHEDULE] Reschedule window closed - cancelling request`);
+
+      // Cancel the request
+      await serviceRequestRepository.update(requestIdValue, {
+        status: "cancelled",
+        cancellationReason: `Provider failed to reschedule within required timeframe. ${serviceRequest.missedService ? "Missed service reported." : ""}`,
+        cancelledBy: "system",
+        cancelledAt: new Date(),
+        rescheduleRequests: [
+          ...(serviceRequest.rescheduleRequests as any || []),
+          {
+            id: `reschedule-expired-${Date.now()}`,
+            requestedBy: "service_provider",
+            requestedAt: new Date(),
+            oldSchedule: currentSchedule,
+            newSchedule: null,
+            reason: "Reschedule window expired (1 hour after slot ended)",
+            reasonCode: "other",
+            status: "cancelled",
+          },
+        ],
+      });
+
+      await serviceRequestRepository.addStatusHistory(requestIdValue, {
+        status: "cancelled",
+        note: "Auto-cancelled: Provider did not reschedule within 1 hour after slot ended",
+        updatedBy: "service_provider",
+      });
+
+      // Send cancellation notifications to both customer and provider
+      try {
+        const customer = await customerRepository.findById(serviceRequest.customerId);
+        const provider = serviceRequest.serviceProviderId
+          ? await serviceProviderRepository.findById(serviceRequest.serviceProviderId)
+          : null;
+
+        if (customer) {
+          // Notify customer about cancellation
+          await notificationRepository.create({
+            recipientId: customer.id,
+            recipientType: "customer",
+            type: "request_cancelled",
+            title: "Service Request Auto-Cancelled",
+            message: `Your service request "${serviceRequest.serviceTitle}" has been auto-cancelled because the provider could not complete the service. Please create a new request.`,
+            requestId: serviceRequest.id,
+            isRead: false,
+          });
+          console.log(`✅ [RESCHEDULE] Cancellation notification sent to customer: ${customer.name}`);
+        }
+
+        if (provider) {
+          // Notify provider about cancellation
+          await notificationRepository.create({
+            recipientId: provider.id,
+            recipientType: "serviceProvider",
+            type: "request_cancelled",
+            title: "Service Request Auto-Cancelled",
+            message: `Your service request "${serviceRequest.serviceTitle}" has been auto-cancelled because you didn't reschedule within the required timeframe.`,
+            requestId: serviceRequest.id,
+            isRead: false,
+          });
+          console.log(`✅ [RESCHEDULE] Cancellation notification sent to provider: ${provider.name}`);
+        }
+      } catch (notifError) {
+        console.error("Failed to send cancellation notifications:", notifError);
+        // Don't fail the cancellation if notification fails
+      }
+
+      res.status(410).json({
+        message: "Reschedule window closed. Service request has been cancelled.",
+        success: false,
+        error: "RESCHEDULE_WINDOW_EXPIRED",
+        data: {
+          request: {
+            id: serviceRequest.id,
+            serviceTitle: serviceRequest.serviceTitle,
+            status: "cancelled",
+          },
+          slotEndTime: slotEndTime,
+          rescheduleWindowEnded: oneHourAfterSlotEnds,
+          currentTime: now,
+        },
+      });
+      return;
+    }
+
+    // Scenario 4: Before slot starts (status = "assigned")
+    // Provider CAN reschedule if they haven't started yet
+    if (now < slotEndTime && serviceRequest.status === "assigned") {
+      console.log(`🔄 [RESCHEDULE] Pre-slot reschedule - provider hasn't started service yet`);
+
+      // Check if already has too many reschedules
+      const rescheduleCount = serviceRequest.rescheduleCount || 0;
+      if (rescheduleCount >= 3) {
+        res.status(400).json({
+          message: "Maximum reschedule limit reached (3 times)",
+          success: false,
+          rescheduleCount: rescheduleCount,
+        });
+        return;
+      }
+
+      // Validate new schedule date
+      const newScheduleDate = new Date(schedule.date);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (newScheduleDate < today) {
+        res.status(400).json({
+          message: "New schedule date must be today or in the future",
+          success: false,
+        });
+        return;
+      }
+
+      // Create reschedule request
+      const rescheduleId = `reschedule-${Date.now()}`;
+      const rescheduleRequest = {
+        id: rescheduleId,
+        requestedBy: "service_provider",
+        requestedAt: new Date(),
+        oldSchedule: currentSchedule,
+        newSchedule: {
+          date: newScheduleDate,
+          timeSlot: schedule.timeSlot,
+          preferredTime: schedule.preferredTime,
+        },
+        reason: reason,
+        reasonCode: reasonCode,
+        status: "approved", // Auto-approve for pre-slot reschedule
+        approvedBy: "auto_approved",
+        approvedAt: new Date(),
+        proof: proof,
+      };
+
+      // Update service request
+      const updatedRequest = await serviceRequestRepository.update(requestIdValue, {
+        schedule: {
+          date: newScheduleDate,
+          timeSlot: schedule.timeSlot,
+          preferredTime: schedule.preferredTime || currentSchedule.preferredTime,
+        },
+        rescheduleCount: (serviceRequest.rescheduleCount || 0) + 1,
+        lastRescheduleAt: new Date(),
+        rescheduleRequests: [
+          ...(serviceRequest.rescheduleRequests as any || []),
+          rescheduleRequest,
+        ],
+      });
+
+      await serviceRequestRepository.addStatusHistory(requestIdValue, {
+        status: serviceRequest.status,
+        note: `Provider rescheduled before starting service. Reason: ${reason}`,
+        updatedBy: "service_provider",
+      });
+
+      // Send notification to customer
+      try {
+        const customer = await customerRepository.findById(serviceRequest.customerId);
+        const provider = await serviceProviderRepository.findById(providerId);
+
+        if (customer) {
+          await handleReschedulingNotifications(
+            customer.id,
+            customer.name,
+            providerId,
+            provider?.name || "Service Provider",
+            serviceRequest.id,
+            serviceRequest.serviceTitle,
+          );
+          console.log(`✅ [RESCHEDULE] Notification sent to customer: ${customer.name}`);
+        }
+      } catch (notifError) {
+        console.error("Failed to send reschedule notification:", notifError);
+        // Don't fail the reschedule if notification fails
+      }
+
+      console.log(`✅ [RESCHEDULE] Request rescheduled before starting service`);
+
+      res.status(200).json({
+        message: "Service request rescheduled successfully (before starting service)",
+        success: true,
+        data: {
+          request: {
+            id: updatedRequest?.id,
+            serviceTitle: updatedRequest?.serviceTitle,
+            status: updatedRequest?.status,
+          },
+          oldSchedule: currentSchedule,
+          newSchedule: {
+            date: newScheduleDate,
+            timeSlot: schedule.timeSlot,
+          },
+          rescheduleId: rescheduleId,
+          rescheduleType: "before_slot",
+        },
+      });
+      return;
+    }
+
+    res.status(400).json({
+      message: "Cannot reschedule in current state",
+      success: false,
+    });
+  } catch (error: any) {
+    console.error("Error in provider reschedule:", error);
+    res.status(500).json({
+      message: error.message || "Failed to reschedule service request",
+      success: false,
+    });
+    return;
+  }
+};
