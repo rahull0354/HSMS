@@ -27,22 +27,39 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
-// Middleware to capture raw body for webhooks
-app.use(
+// ⚠️ CRITICAL: Webhook route MUST be defined BEFORE express.json() middleware
+// This prevents the JSON parser from overwriting the raw body needed for Stripe signature verification
+
+// Webhook route with raw body middleware - defined BEFORE global middleware
+app.post(
   "/api/payments/webhooks/stripe",
-  express.raw({ type: "application/json" }),
+  express.raw({ type: "application/json", limit: "10mb" }),
   (req, res, next) => {
+    console.log("🔗 [WEBHOOK MIDDLEWARE] Raw body captured for webhook endpoint");
+    console.log("🔗 [WEBHOOK MIDDLEWARE] Request method:", req.method);
+    console.log("🔗 [WEBHOOK MIDDLEWARE] Request URL:", req.url);
+    console.log("🔗 [WEBHOOK MIDDLEWARE] Content-Type:", req.get("content-type"));
+
+    // Store raw body BEFORE any JSON parsing
     (req as any).rawBody = req.body;
+
+    // Also store as buffer for Stripe webhook verification
+    if (Buffer.isBuffer(req.body)) {
+      (req as any).rawBodyBuffer = req.body;
+      console.log("🔗 [WEBHOOK MIDDLEWARE] Raw body is Buffer, length:", req.body.length);
+    }
+
     next();
   },
+  handleStripeWebhook
 );
 
-app.use(express.json());
+// CORS middleware
 app.use(cors(corsOptions));
-app.use(express.urlencoded({ extended: true }));
 
-// Webhook route (after raw body capture middleware)
-app.post("/api/payments/webhooks/stripe", handleStripeWebhook);
+// Global middleware (applies to all routes EXCEPT webhook route which is already defined)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use("/customer", customerRoutes);
 app.use("/serviceProvider", serviceProviderRoutes);
