@@ -1,4 +1,5 @@
 import { notificationRepository } from "#db/repositories/notification.repository.js";
+import { triggerUserNotification, PUSH_EVENTS } from "#config/pusher.js";
 
 // notify customer when service is cancelled
 export const notifyCustomerRequestCancelled = async (
@@ -18,10 +19,26 @@ export const notifyCustomerRequestCancelled = async (
       isRead: false,
     });
 
-    console.log(`Notification Sent to customer ${customerId}`);
+    console.log(
+      `📢 [NOTIFICATION] Database notification sent to customer ${customerId}`,
+    );
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification("customer", customerId, {
+      id: notification.id,
+      type: "request_cancelled",
+      title: "Service Request Cancelled",
+      message: `Your service request ${requestTitle} has been cancelled. Reason: ${cancellationReason}`,
+      requestId: requestId,
+      data: { cancellationReason },
+    });
+
     return notification;
   } catch (error) {
-    console.error("error creating customer notification: ", error);
+    console.error(
+      "❌ [NOTIFICATION] Error creating customer notification:",
+      error,
+    );
     throw error;
   }
 };
@@ -45,10 +62,26 @@ export const notifyProviderRequestCancelled = async (
       isRead: false,
     });
 
-    console.log(`Notification sent to provider ${providerId}`);
+    console.log(
+      `📢 [NOTIFICATION] Database notification sent to provider ${providerId}`,
+    );
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification("provider", providerId, {
+      id: notification.id,
+      type: "request_cancelled",
+      title: "Service Request Cancelled",
+      message: `Customer ${customerName} has cancelled the assigned request "${requestTitle}".`,
+      requestId: requestId,
+      data: { cancellationReason, customerName },
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error sending notification to provider: ", error);
+    console.error(
+      "❌ [NOTIFICATION] Error sending notification to provider:",
+      error,
+    );
     throw error;
   }
 };
@@ -115,10 +148,20 @@ export const notifyCustomerRequestRescheduled = async (
       isRead: false,
     });
 
-    console.log(`Notification Sent to customer ${customerId}`);
+    console.log(`📢 [NOTIFICATION] Database notification sent to customer ${customerId}`);
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('customer', customerId, {
+      id: notification.id,
+      type: 'request_rescheduled',
+      title: 'Service Request Rescheduled',
+      message: `Your service request ${requestTitle} has been re-scheduled`,
+      requestId: requestId,
+    });
+
     return notification;
   } catch (error) {
-    console.error("error creating customer notification: ", error);
+    console.error("❌ [NOTIFICATION] Error creating customer notification:", error);
     throw error;
   }
 };
@@ -141,10 +184,21 @@ export const notifyProviderRequestRescheduled = async (
       isRead: false,
     });
 
-    console.log(`Notification sent to provider ${providerId}`);
+    console.log(`📢 [NOTIFICATION] Database notification sent to provider ${providerId}`);
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('provider', providerId, {
+      id: notification.id,
+      type: 'request_rescheduled',
+      title: 'Service Request Rescheduled',
+      message: `Customer ${customerName} has rescheduled the assigned request "${requestTitle}"`,
+      requestId: requestId,
+      data: { customerName }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error sending notification to provider: ", error);
+    console.error("❌ [NOTIFICATION] Error sending notification to provider:", error);
     throw error;
   }
 };
@@ -210,10 +264,21 @@ export const notifyCustomerRequestAccepted = async (
       isRead: false,
     });
 
-    console.log(`Notification sent to customer ${customerId}`);
+    console.log(`📢 [NOTIFICATION] Database notification sent to customer ${customerId}`);
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('customer', customerId, {
+      id: notification.id,
+      type: 'request_assigned',
+      title: 'Service Request Accepted',
+      message: `Great news! Your service request "${requestTitle}" has been assigned to ${providerName}.`,
+      requestId: requestId,
+      data: { providerName }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error Creating Request Accepted Notification: ", error);
+    console.error("❌ [NOTIFICATION] Error Creating Request Accepted Notification:", error);
     throw error;
   }
 };
@@ -269,10 +334,21 @@ export const notifyCustomerAboutReviewReply = async (
       isRead: false,
     });
 
-    console.log(`Notification sent to customer ${customerId}`);
+    console.log(`📢 [NOTIFICATION] Database notification sent to customer ${customerId}`);
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('customer', customerId, {
+      id: notification.id,
+      type: 'review_reply',
+      title: 'Provider Responded to Your Review',
+      message: `${providerName} has responded to your review`,
+      reviewId: reviewId,
+      data: { providerName, responseComment }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error sending notification to customer: ", error);
+    console.error("❌ [NOTIFICATION] Error sending notification to customer:", error);
     throw error;
   }
 };
@@ -335,9 +411,20 @@ export const notifyProviderPayoutInitiated = async (
     console.log(
       `✉️ [NOTIFICATION] Payout initiated notification sent to provider ${providerId}`,
     );
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('provider', providerId, {
+      id: notification.id,
+      type: 'payout_initiated',
+      title: 'Payout Initiated',
+      message: `Your payout of ₹${amount} for ${invoiceCount} invoice(s) has been initiated.`,
+      payoutId: payoutId,
+      data: { amount, invoiceCount }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error creating payout initiated notification:", error);
+    console.error("❌ [NOTIFICATION] Error creating payout initiated notification:", error);
     throw error;
   }
 };
@@ -364,9 +451,20 @@ export const notifyProviderPayoutProcessed = async (
     console.log(
       `✉️ [NOTIFICATION] Payout processed notification sent to provider ${providerId}`,
     );
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('provider', providerId, {
+      id: notification.id,
+      type: 'payout_processed',
+      title: 'Payout Being Processed',
+      message: `Your payout of ₹${amount} is being processed.`,
+      payoutId: payoutId,
+      data: { amount }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error creating payout processed notification:", error);
+    console.error("❌ [NOTIFICATION] Error creating payout processed notification:", error);
     throw error;
   }
 };
@@ -396,9 +494,20 @@ export const notifyProviderPayoutCompleted = async (
       `✅ [NOTIFICATION] Payout completed notification sent to provider ${providerId}`,
     );
     console.log(`   Amount: ₹${amount}, UTR: ${utr}`);
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('provider', providerId, {
+      id: notification.id,
+      type: 'payout_completed',
+      title: 'Payout Completed',
+      message: `Your payout of ₹${amount} has been completed! UTR: ${utr}`,
+      payoutId: payoutId,
+      data: { amount, utr, bankName }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error creating payout completed notification:", error);
+    console.error("❌ [NOTIFICATION] Error creating payout completed notification:", error);
     throw error;
   }
 };
@@ -427,9 +536,20 @@ export const notifyProviderPayoutFailed = async (
       `❌ [NOTIFICATION] Payout failed notification sent to provider ${providerId}`,
     );
     console.log(`   Amount: ₹${amount}, Reason: ${failureReason}`);
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('provider', providerId, {
+      id: notification.id,
+      type: 'payout_failed',
+      title: 'Payout Failed',
+      message: `Your payout of ₹${amount} could not be processed. Reason: ${failureReason}`,
+      payoutId: payoutId,
+      data: { amount, failureReason }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error creating payout failed notification:", error);
+    console.error("❌ [NOTIFICATION] Error creating payout failed notification:", error);
     throw error;
   }
 };
@@ -465,9 +585,19 @@ export const notifyAdminBankAccountAdded = async (
       `🏦 [NOTIFICATION] Bank account added notification sent to admins`,
     );
     console.log(`   Provider: ${providerName}, Bank: ${bankName}`);
+
+    // Trigger real-time Pusher notification to all admins
+    triggerUserNotification('admin', 'system', {
+      id: notification.id,
+      type: 'bank_account_added',
+      title: 'New Bank Account Added',
+      message: `Provider ${providerName} has added a new bank account: ${bankName}`,
+      data: { providerId, providerName, bankName, accountNumberLast4 }
+    });
+
     return notification;
   } catch (error) {
-    console.error("Error creating bank account added notification:", error);
+    console.error("❌ [NOTIFICATION] Error creating bank account added notification:", error);
     throw error;
   }
 };
@@ -507,6 +637,18 @@ export const notifyProviderBankAccountVerified = async (
     console.log(
       `✅ [NOTIFICATION] Bank account ${verificationStatus} notification sent to provider ${providerId}`,
     );
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('provider', providerId, {
+      id: notification.id,
+      type: verificationStatus === "verified" ? "bank_account_verified" : "bank_account_verification_failed",
+      title: verificationStatus === "verified" ? "Bank Account Verified" : "Bank Account Verification Failed",
+      message: verificationStatus === "verified"
+        ? `Your bank account ${bankName} has been verified successfully.`
+        : `Your bank account ${bankName} verification failed.`,
+      data: { bankName, accountNumberLast4, verificationStatus, reference }
+    });
+
     return notification;
   } catch (error) {
     console.error(
