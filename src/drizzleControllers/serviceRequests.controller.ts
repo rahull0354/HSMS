@@ -11,6 +11,22 @@ import {
 import { invoiceRepository } from "#db/repositories/invoice.repository.js";
 import { notificationRepository } from "#db/repositories/notification.repository.js";
 
+/**
+ * Convert UTC Date to IST (Indian Standard Time)
+ * This is necessary because Vercel servers run in UTC but the application uses IST
+ */
+function getISTTime(date: Date = new Date()): Date {
+  return new Date(date.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+}
+
+/**
+ * Get current hour in IST timezone
+ */
+function getCurrentISTHour(): number {
+  const istTime = getISTTime();
+  return istTime.getHours();
+}
+
 
 export const createServiceRequest = async (req: Request, res: Response) => {
   try {
@@ -103,7 +119,7 @@ export const createServiceRequest = async (req: Request, res: Response) => {
     }
 
     const scheduleDate = new Date(schedule.date);
-    const today = new Date();
+    const today = getISTTime();
     today.setHours(0, 0, 0, 0);
 
     if (scheduleDate < today) {
@@ -478,7 +494,7 @@ export const getRequestByIdForCustomer = async (req: Request, res: Response) => 
     }
   }
 
-    const now = new Date();
+    const now = getISTTime();
     const scheduleDate = new Date(serviceRequest.schedule.date);
     const timeRemaining = scheduleDate.getTime() - now.getTime();
     const daysRemaining = Math.ceil(timeRemaining / (1000 * 60 * 60 * 24));
@@ -583,7 +599,7 @@ export const getRequestByIdForProvider = async (req: Request, res: Response) => 
     }
   }
 
-    const now = new Date();
+    const now = getISTTime();
     const scheduleDate = new Date(serviceRequest.schedule.date);
     const timeRemaining = scheduleDate.getTime() - now.getTime();
     const daysRemaining = Math.ceil(timeRemaining / (1000 * 60 * 60 * 24));
@@ -880,7 +896,7 @@ export const rescheduleServiceRequest = async (req: Request, res: Response) => {
 
     // validate new schedule
     const newScheduleDate = new Date(schedule.date);
-    const today = new Date();
+    const today = getISTTime();
     today.setHours(0, 0, 0, 0);
 
     if (newScheduleDate < today) {
@@ -1557,7 +1573,7 @@ export const startService = async (req: Request, res: Response) => {
 
     // validate that service can only be started on the scheduled date
     const scheduledDate = new Date(serviceRequest.schedule.date);
-    const today = new Date();
+    const today = getISTTime();
 
     // Reset time to midnight for accurate date comparison
     scheduledDate.setHours(0, 0, 0, 0);
@@ -1591,8 +1607,16 @@ export const startService = async (req: Request, res: Response) => {
     }
 
     // Optional: Check if current time matches the time slot
+    // IMPORTANT: Convert to IST timezone since servers run in UTC
     const currentTime = new Date();
-    const currentHour = currentTime.getHours();
+    const istTime = new Date(currentTime.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const currentHour = istTime.getHours();
+
+    console.log(`🕐 [TIME CHECK] Current UTC time: ${currentTime.toISOString()}`);
+    console.log(`🕐 [TIME CHECK] Current IST time: ${istTime.toISOString()}`);
+    console.log(`🕐 [TIME CHECK] Current IST hour: ${currentHour}`);
+    console.log(`🕐 [TIME CHECK] Scheduled time slot: ${serviceRequest.schedule.timeSlot}`);
+
     let timeSlotValid = false;
 
     switch (serviceRequest.schedule.timeSlot) {
@@ -1610,12 +1634,16 @@ export const startService = async (req: Request, res: Response) => {
         break;
     }
 
+    console.log(`🕐 [TIME CHECK] Time slot valid: ${timeSlotValid}`);
+
     if (!timeSlotValid) {
       res.status(400).json({
         message: `Cannot start service. The scheduled time slot is "${serviceRequest.schedule.timeSlot}". Current time does not fall within this slot.`,
         success: false,
         scheduledTimeSlot: serviceRequest.schedule.timeSlot,
-        currentTime: currentTime.toLocaleTimeString(),
+        currentTime: istTime.toLocaleTimeString(),
+        currentTimeZone: "IST (Indian Standard Time)",
+        utcTime: currentTime.toISOString(),
       });
       return;
     }
@@ -2267,7 +2295,7 @@ export const providerRescheduleServiceRequest = async (
       return;
     }
 
-    // Calculate slot end time
+    // Calculate slot end time (using IST for consistency)
     const slotEndTime = new Date(currentScheduleDate);
     slotEndTime.setHours(currentSlot.end, 0, 0, 0);
 
@@ -2279,7 +2307,8 @@ export const providerRescheduleServiceRequest = async (
     const oneHourAfterSlotEnds = new Date(slotEndTime);
     oneHourAfterSlotEnds.setHours(oneHourAfterSlotEnds.getHours() + 1);
 
-    const now = new Date();
+    // Use IST time for current time comparison
+    const now = getISTTime();
 
     // Scenario 1: During service slot (before 1 hour window)
     if (now < oneHourBeforeSlotEnds && serviceRequest.status === "in_progress") {
@@ -2298,7 +2327,7 @@ export const providerRescheduleServiceRequest = async (
 
       // Validate new schedule date
       const newScheduleDate = new Date(schedule.date);
-      const today = new Date();
+      const today = getISTTime();
       today.setHours(0, 0, 0, 0);
 
       if (newScheduleDate < today) {
@@ -2607,7 +2636,7 @@ export const providerRescheduleServiceRequest = async (
 
       // Validate new schedule date
       const newScheduleDate = new Date(schedule.date);
-      const today = new Date();
+      const today = getISTTime();
       today.setHours(0, 0, 0, 0);
 
       if (newScheduleDate < today) {
