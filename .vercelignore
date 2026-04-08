@@ -6,13 +6,9 @@ npm-debug.log
 .gitignore
 .vscode
 .idea
-*.log
 .DS_Store
 .drizzle
 coverage
 .eslintrc
 .prettierrc
-docs/
-scripts/
-*.md
-!README.md
+*log

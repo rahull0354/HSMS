@@ -21,24 +21,28 @@ const app = express();
 const port = process.env.port ?? "9000";
 
 const corsOptions = {
-  origin: ["http://localhost:3000"],
+  origin: ["https://fix-bee-gamma.vercel.app"],
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
 
 // Middleware to capture raw body for webhooks
-app.use('/api/payments/webhooks/stripe', express.raw({ type: 'application/json' }), (req, res, next) => {
-  (req as any).rawBody = req.body;
-  next();
-});
+app.use(
+  "/api/payments/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  (req, res, next) => {
+    (req as any).rawBody = req.body;
+    next();
+  },
+);
 
+app.use(express.json());
 app.use(cors(corsOptions));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
 
 // Webhook route (after raw body capture middleware)
-app.post('/api/payments/webhooks/stripe', handleStripeWebhook);
+app.post("/api/payments/webhooks/stripe", handleStripeWebhook);
 
 app.use("/customer", customerRoutes);
 app.use("/serviceProvider", serviceProviderRoutes);
@@ -56,11 +60,12 @@ app.use("/invoices", drizzleInvoiceRoutes);
 app.use("/payments", drizzlePaymentRoutes);
 
 // Only start server if not in Vercel environment
-if (process.env.NODE_ENV !== "vercel" && process.env.VERCEL !== "1") {
-  app.listen(port, () => {
-    console.log(`Server started on http://localhost:${port}`);
-    startJobs();
-  });
-}
+
+// app.listen(port, () => {
+//   console.log(`Server started on http://localhost:${port}`);
+//   startJobs();
+// });
 
 // stripe listen --forward-to localhost:3001/api/payments/webhooks/stripe
+
+export default app;
