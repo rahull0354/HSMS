@@ -21,43 +21,36 @@ const app = express();
 const port = process.env.port ?? "9000";
 
 const corsOptions = {
-  origin: ["https://fix-bee-gamma.vercel.app"],
+  origin: [
+    "https://fix-bee-gamma.vercel.app", 
+    "http://localhost:3000"
+  ],
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 };
-
-// ⚠️ CRITICAL: Webhook route MUST be defined BEFORE express.json() middleware
-// This prevents the JSON parser from overwriting the raw body needed for Stripe signature verification
 
 // Webhook route with raw body middleware - defined BEFORE global middleware
 app.post(
   "/api/payments/webhooks/stripe",
   express.raw({ type: "application/json", limit: "10mb" }),
   (req, res, next) => {
-    console.log("🔗 [WEBHOOK MIDDLEWARE] Raw body captured for webhook endpoint");
-    console.log("🔗 [WEBHOOK MIDDLEWARE] Request method:", req.method);
-    console.log("🔗 [WEBHOOK MIDDLEWARE] Request URL:", req.url);
-    console.log("🔗 [WEBHOOK MIDDLEWARE] Content-Type:", req.get("content-type"));
-
     // Store raw body BEFORE any JSON parsing
     (req as any).rawBody = req.body;
 
     // Also store as buffer for Stripe webhook verification
     if (Buffer.isBuffer(req.body)) {
       (req as any).rawBodyBuffer = req.body;
-      console.log("🔗 [WEBHOOK MIDDLEWARE] Raw body is Buffer, length:", req.body.length);
     }
 
     next();
   },
-  handleStripeWebhook
+  handleStripeWebhook,
 );
 
 // CORS middleware
 app.use(cors(corsOptions));
 
-// Global middleware (applies to all routes EXCEPT webhook route which is already defined)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -78,10 +71,10 @@ app.use("/payments", drizzlePaymentRoutes);
 
 // Only start server if not in Vercel environment
 
-// app.listen(port, () => {
-//   console.log(`Server started on http://localhost:${port}`);
-//   startJobs();
-// });
+app.listen(port, () => {
+  console.log(`Server started on http://localhost:${port}`);
+  startJobs();
+});
 
 // stripe listen --forward-to localhost:3001/api/payments/webhooks/stripe
 
