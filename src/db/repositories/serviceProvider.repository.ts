@@ -353,6 +353,7 @@ export class ServiceProviderRepository {
       .select({
         id: serviceProviders.id,
         name: serviceProviders.name,
+        email: serviceProviders.email,
         profilePicture: serviceProviders.profilePicture,
         bio: serviceProviders.bio,
         skills: serviceProviders.skills,

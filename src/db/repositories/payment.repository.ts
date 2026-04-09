@@ -1,5 +1,5 @@
 import db from "#db/index.js";
-import { payments } from "#db/schema.js";
+import { invoices, payments } from "#db/schema.js";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 export class PaymentRepository {
@@ -221,6 +221,7 @@ export class PaymentRepository {
     gateway?: string;
     status?: string;
     paymentMethod?: string;
+    serviceProviderId?: string;
   }, pagination?: {
     page?: number;
     limit?: number;
@@ -247,26 +248,93 @@ export class PaymentRepository {
     const limit = pagination?.limit || 10;
     const offset = (page - 1) * limit;
 
-    const paymentsList = await db
-      .select()
-      .from(payments)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(payments.createdAt))
-      .limit(limit)
-      .offset(offset);
+    let query;
+    let countQuery;
 
-    const totalResult = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(payments)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+    // If filtering by serviceProviderId, we need to join with invoices
+    if (filters?.serviceProviderId) {
+      query = db
+        .select({
+          id: payments.id,
+          invoiceId: payments.invoiceId,
+          gateway: payments.gateway,
+          gatewayPaymentId: payments.gatewayPaymentId,
+          gatewayOrderId: payments.gatewayOrderId,
+          amount: payments.amount,
+          currency: payments.currency,
+          paymentMethod: payments.paymentMethod,
+          status: payments.status,
+          failureReason: payments.failureReason,
+          gatewayResponse: payments.gatewayResponse,
+          clientIp: payments.clientIp,
+          userAgent: payments.userAgent,
+          metadata: payments.metadata,
+          initiatedAt: payments.initiatedAt,
+          completedAt: payments.completedAt,
+          failedAt: payments.failedAt,
+          refundedAt: payments.refundedAt,
+          createdAt: payments.createdAt,
+          updatedAt: payments.updatedAt,
+        })
+        .from(payments)
+        .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+        .where(
+          and(
+            eq(invoices.serviceProviderId, filters.serviceProviderId),
+            conditions.length > 0 ? and(...conditions) : undefined
+          )
+        )
+        .orderBy(desc(payments.createdAt))
+        .limit(limit)
+        .offset(offset);
 
-    return {
-      payments: paymentsList,
-      total: Number(totalResult[0]?.count || 0),
-      page,
-      limit,
-      totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
-    };
+      // Count query with join
+      const subquery = db
+        .select({ count: sql<number>`count(*)` })
+        .from(payments)
+        .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+        .where(
+          and(
+            eq(invoices.serviceProviderId, filters.serviceProviderId),
+            conditions.length > 0 ? and(...conditions) : undefined
+          )
+        );
+
+      const [totalResult] = await subquery;
+      const total = Number(totalResult?.count || 0);
+
+      const paymentsList = await query;
+
+      return {
+        payments: paymentsList,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    } else {
+      // Normal query without join
+      const paymentsList = await db
+        .select()
+        .from(payments)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(payments.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const totalResult = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(payments)
+        .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+      return {
+        payments: paymentsList,
+        total: Number(totalResult[0]?.count || 0),
+        page,
+        limit,
+        totalPages: Math.ceil(Number(totalResult[0]?.count || 0) / limit),
+      };
+    }
   }
 
   /**

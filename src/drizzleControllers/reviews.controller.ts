@@ -2,7 +2,7 @@ import { customerRepository } from "#db/repositories/customer.repository.js";
 import { reviewsRepository } from "#db/repositories/reviews.repository.js";
 import { serviceProviderRepository } from "#db/repositories/serviceProvider.repository.js";
 import { serviceRequestRepository } from "#db/repositories/serviceRequests.repository.js";
-import { handleReviewResponseNotification } from "#drizzleServices/notification.service.js";
+import { handleReviewResponseNotification, handleNewReviewNotification } from "#drizzleServices/notification.service.js";
 import { Request, Response } from "express";
 
 // customer functions
@@ -130,6 +130,25 @@ export const createReview = async (req: Request, res: Response) => {
           totalReviews: totalReviews,
         },
       );
+    }
+
+    // 🆕 Send notification to provider about new review
+    try {
+      if (provider && updatedProvider) {
+        await handleNewReviewNotification(
+          provider.id,
+          provider.name,
+          customer.id,
+          customer.name,
+          newReview.id,
+          rating,
+          comment || "",
+          serviceRequest.serviceTitle || "Service",
+        );
+      }
+    } catch (notificationError) {
+      // Don't fail the review creation if notification fails
+      console.error("Failed to send new review notification:", notificationError);
     }
 
     res.status(201).json({
