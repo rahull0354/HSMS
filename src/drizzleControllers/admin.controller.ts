@@ -1262,4 +1262,111 @@ export const getServiceEarnings = async (req: Request, res: Response) => {
     });
     return;
   }
+}
+
+export const getProviderEarnings = async (req: Request, res: Response) => {
+  try {
+
+    // Get all service providers with their basic info
+    const allProviders = await adminRepository.getAllServiceProviders();
+
+    // Import repositories we need
+    const { paymentRepository } = await import("#db/repositories/payment.repository.js");
+    const { bankAccountRepository } = await import("#db/repositories/bankAccount.repository.js");
+
+    // Get earnings data for each provider
+    const providersWithEarnings = await Promise.all(
+      allProviders.providers.map(async (provider: any) => {
+        try {
+          // Get completed payments (earnings)
+          const completedPayments = await paymentRepository.getAllPayments({
+            serviceProviderId: provider.id,
+            status: 'completed'
+          });
+
+          // Get pending payments
+          const pendingPayments = await paymentRepository.getAllPayments({
+            serviceProviderId: provider.id,
+            status: 'initiated'
+          });
+
+          // Calculate totals
+          const totalEarnings = completedPayments.payments.reduce((sum: number, p: any) =>
+            sum + parseFloat(p.amount || 0), 0
+          );
+
+          const pendingEarnings = pendingPayments.payments.reduce((sum: number, p: any) =>
+            sum + parseFloat(p.amount || 0), 0
+          );
+
+          // Get bank verification status - use correct method name
+          const bankAccounts = await bankAccountRepository.getProviderBankAccounts(provider.id);
+          const bankDetailsVerified = bankAccounts.some((ba: any) => ba.isVerified === true);
+
+          // Get last payment date
+          const lastPayment = completedPayments.payments
+            .filter((p: any) => p.completedAt)
+            .sort((a: any, b: any) =>
+              new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+            )[0];
+
+          return {
+            providerId: provider.id,
+            providerName: provider.name,
+            providerEmail: provider.email,
+            totalEarnings: totalEarnings,
+            pendingEarnings: pendingEarnings,
+            completedPayments: completedPayments.payments.length,
+            pendingPayments: pendingPayments.payments.length,
+            averageRating: provider.averageRating || null,
+            totalServices: provider.totalJobsCompleted || 0,
+            lastPaymentDate: lastPayment?.completedAt || null,
+            bankDetailsVerified: bankDetailsVerified,
+          };
+        } catch (providerError: any) {
+          console.error(`Error processing provider ${provider.id}:`, providerError);
+          // Return default values for providers with errors
+          return {
+            providerId: provider.id,
+            providerName: provider.name,
+            providerEmail: provider.email,
+            totalEarnings: 0,
+            pendingEarnings: 0,
+            completedPayments: 0,
+            pendingPayments: 0,
+            averageRating: provider.averageRating || null,
+            totalServices: provider.totalJobsCompleted || 0,
+            lastPaymentDate: null,
+            bankDetailsVerified: false,
+          };
+        }
+      })
+    );
+
+    // Calculate overall stats
+    const stats = {
+      totalProviders: allProviders.providers.length,
+      totalEarnings: providersWithEarnings.reduce((sum, p) => sum + p.totalEarnings, 0),
+      pendingEarnings: providersWithEarnings.reduce((sum, p) => sum + p.pendingEarnings, 0),
+      completedPayouts: providersWithEarnings.reduce((sum, p) => sum + p.completedPayments, 0),
+      pendingPayouts: providersWithEarnings.reduce((sum, p) => sum + p.pendingPayments, 0),
+    };
+
+    res.status(200).json({
+      message: "Provider earnings fetched successfully",
+      success: true,
+      data: {
+        earnings: providersWithEarnings,
+        stats: stats,
+      },
+    });
+    return;
+  } catch (error: any) {
+    console.error("❌ [ADMIN] Error fetching provider earnings:", error);
+    res.status(500).json({
+      message: error.message || "Failed to fetch provider earnings",
+      success: false,
+    });
+    return;
+  }
 };

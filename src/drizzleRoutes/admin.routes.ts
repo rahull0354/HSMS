@@ -9,6 +9,7 @@ import {
   getCustomerById,
   getDashboardStats,
   getProfile,
+  getProviderEarnings,
   getServiceProviderById,
   getServiceDistribution,
   getRevenueDistribution,
@@ -102,6 +103,11 @@ router.get(
   "/serviceProvider/:serviceProviderId",
   drizzleAuthMiddleware(["admin"]),
   getServiceProviderById,
+);
+router.get(
+  "/providers/earnings",
+  drizzleAuthMiddleware(["admin"]),
+  getProviderEarnings,
 );
 router.patch(
   "/serviceProvider/suspend/:serviceProviderId",

@@ -353,6 +353,52 @@ export const notifyCustomerAboutReviewReply = async (
   }
 };
 
+/**
+ * Notify provider when customer writes a new review
+ */
+export const notifyProviderAboutNewReview = async (
+  providerId: string,
+  providerName: string,
+  customerId: string,
+  customerName: string,
+  reviewId: string,
+  rating: number,
+  comment: string,
+  serviceTitle: string,
+) => {
+  try {
+    const notification = await notificationRepository.create({
+      recipientId: providerId,
+      recipientType: "serviceProvider",
+      type: "new_review",
+      title: "New Review Received",
+      message: `${customerName} has left you a ${rating}-star review for "${serviceTitle}": "${comment.substring(0, 100)}${comment.length > 100 ? "..." : ""}"`,
+      reviewId: reviewId,
+      isRead: false,
+    });
+
+    console.log(
+      `⭐ [NOTIFICATION] New review notification sent to provider ${providerId}`,
+    );
+    console.log(`   Rating: ${rating} stars, Customer: ${customerName}`);
+
+    // Trigger real-time Pusher notification
+    triggerUserNotification('provider', providerId, {
+      id: notification.id,
+      type: 'new_review',
+      title: 'New Review Received',
+      message: `${customerName} has left you a ${rating}-star review for "${serviceTitle}"`,
+      reviewId: reviewId,
+      data: { customerName, rating, comment, serviceTitle }
+    });
+
+    return notification;
+  } catch (error) {
+    console.error("❌ [NOTIFICATION] Error creating new review notification:", error);
+    throw error;
+  }
+};
+
 export const handleReviewResponseNotification = async (
   customerId: string,
   customerName: string,
@@ -379,7 +425,46 @@ export const handleReviewResponseNotification = async (
       notification,
     };
   } catch (error) {
-    console.error("error creating review response notification: ", error);
+    console.error("❌ [NOTIFICATION] Error creating review response notification:", error);
+    throw error;
+  }
+};
+
+/**
+ * Handle notification when customer writes a new review for provider
+ */
+export const handleNewReviewNotification = async (
+  providerId: string,
+  providerName: string,
+  customerId: string,
+  customerName: string,
+  reviewId: string,
+  rating: number,
+  comment: string,
+  serviceTitle: string,
+) => {
+  try {
+    const notifications = [];
+
+    const providerNotification = await notifyProviderAboutNewReview(
+      providerId,
+      providerName,
+      customerId,
+      customerName,
+      reviewId,
+      rating,
+      comment,
+      serviceTitle,
+    );
+    notifications.push(providerNotification);
+
+    return {
+      success: true,
+      notificationsCreated: notifications.length,
+      notifications,
+    };
+  } catch (error) {
+    console.error("❌ [NOTIFICATION] Error creating new review notification:", error);
     throw error;
   }
 };
