@@ -20,6 +20,11 @@ import {
   toggleCategoryStatus,
   unsuspendProvider,
   updateCategory,
+  refreshAccessToken,
+  logout,
+  getActiveSessions,
+  revokeSession,
+  logoutAll,
 } from "#drizzleControllers/admin.controller.js";
 import {
   bulkInitiatePayouts,
@@ -46,6 +51,7 @@ const router = express.Router();
 
 router.post("/register", registerAdmin);
 router.post("/login", loginAdmin);
+router.post("/refresh-token", refreshAccessToken);
 
 // dashboard management routes
 router.get("/dashboard", drizzleAuthMiddleware(["admin"]), getDashboardStats);
@@ -54,7 +60,17 @@ router.get("/revenue-distribution", drizzleAuthMiddleware(["admin"]), getRevenue
 router.get("/service-earnings/:requestId", drizzleAuthMiddleware(["admin"]), getServiceEarnings);
 
 // middleware protected routes
+router.post("/logout", drizzleAuthMiddleware(["admin"]), logout);
 router.get("/profile", drizzleAuthMiddleware(["admin"]), getProfile);
+
+// Session management routes
+router.get("/sessions", drizzleAuthMiddleware(["admin"]), getActiveSessions);
+router.delete(
+  "/sessions/:sessionId",
+  drizzleAuthMiddleware(["admin"]),
+  revokeSession,
+);
+router.post("/logout-all", drizzleAuthMiddleware(["admin"]), logoutAll);
 
 // service category routes
 router.post(

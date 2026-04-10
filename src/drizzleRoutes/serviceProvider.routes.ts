@@ -14,6 +14,11 @@ import {
   toggleAvailability,
   updateServiceProviderDetails,
   verifyAndReactivateAccount,
+  refreshAccessToken,
+  logout,
+  getActiveSessions,
+  revokeSession,
+  logoutAll,
 } from "#drizzleControllers/serviceProvider.controller.js";
 import {
   getMyPayoutById,
@@ -45,6 +50,7 @@ const router = express.Router();
 
 router.post("/register", registerServiceProvider);
 router.post("/login", loginServiceProvider);
+router.post("/refresh-token", refreshAccessToken);
 
 router.post("/request-reactivation", requestReactivation);
 router.get("/reactivate-account/:token", verifyAndReactivateAccount);
@@ -70,11 +76,30 @@ router.post(
   drizzleAuthMiddleware(["serviceProvider"]),
   deactivateAccount,
 );
+router.post("/logout", drizzleAuthMiddleware(["serviceProvider"]), logout);
 router.get(
   "/profile",
   drizzleAuthMiddleware(["serviceProvider"]),
   getProfileDetails,
 );
+
+// Session management routes
+router.get(
+  "/sessions",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  getActiveSessions,
+);
+router.delete(
+  "/sessions/:sessionId",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  revokeSession,
+);
+router.post(
+  "/logout-all",
+  drizzleAuthMiddleware(["serviceProvider"]),
+  logoutAll,
+);
+
 router.put(
   "/toggleAvailability",
   drizzleAuthMiddleware(["serviceProvider"]),

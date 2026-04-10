@@ -7,6 +7,11 @@ import {
   requestReactivation,
   updateCustomerDetails,
   verifyAndReactivateAccount,
+  refreshAccessToken,
+  logout,
+  getActiveSessions,
+  revokeSession,
+  logoutAll,
 } from "../drizzleControllers/customer.controller.js";
 import { getCustomerById } from "../drizzleControllers/admin.controller.js";
 import { drizzleAuthMiddleware } from "#middlewares/drizzleAuth.middleware.js";
@@ -23,6 +28,7 @@ const router = express.Router();
 
 router.post("/register", registerCustomer);
 router.post("/login", loginCustomer);
+router.post("/refresh-token", refreshAccessToken);
 router.post("/request-reactivation", requestReactivation);
 router.get("/reactivate-account/:token", verifyAndReactivateAccount);
 
@@ -39,7 +45,17 @@ router.post(
   deactivateAccount,
 );
 
+router.post("/logout", drizzleAuthMiddleware(["customer"]), logout);
 router.get("/profile", drizzleAuthMiddleware(["customer"]), getProfileDetails);
+
+// Session management routes
+router.get("/sessions", drizzleAuthMiddleware(["customer"]), getActiveSessions);
+router.delete(
+  "/sessions/:sessionId",
+  drizzleAuthMiddleware(["customer"]),
+  revokeSession,
+);
+router.post("/logout-all", drizzleAuthMiddleware(["customer"]), logoutAll);
 
 // Notification routes (must come before /:id route)
 router.get(

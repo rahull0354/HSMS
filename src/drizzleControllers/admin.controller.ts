@@ -117,25 +117,21 @@ export const loginAdmin = async (req: Request, res: Response) => {
     // saving lastLogin Date
     await adminRepository.updateLastLogin(checkAdmin.id);
 
-    // token generation
-    const token = jwt.sign(
-      {
-        id: checkAdmin.id,
-        role: "admin",
-      },
-      process.env.JWT_SECRET_KEY || "",
-      { expiresIn: "7d" },
-    );
+    // generate tokens using auth service
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const tokens = await authService.generateTokens(checkAdmin.id, "admin", req);
 
     res.status(200).json({
       message: `Welcome ${checkAdmin.name}`,
       success: true,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
       checkAdmin: {
         id: checkAdmin.id,
         name: checkAdmin.name,
         email: checkAdmin.email,
       },
-      token,
     });
     return;
   } catch (error) {
@@ -1370,3 +1366,186 @@ export const getProviderEarnings = async (req: Request, res: Response) => {
     return;
   }
 };
+
+// Refresh token endpoint
+export const refreshAccessToken = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      res.status(400).json({
+        message: "Refresh token is required",
+        success: false,
+      });
+      return;
+    }
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.refreshAccessToken(refreshToken, req);
+
+    if (!result.success) {
+      res.status(401).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Token refreshed successfully",
+      success: true,
+      accessToken: result.tokens!.accessToken,
+      refreshToken: result.tokens!.refreshToken,
+      expiresIn: result.tokens!.expiresIn,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error refreshing token",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Logout (revoke current refresh token)
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+    const userId = (req as any).user.id;
+
+    if (!refreshToken) {
+      res.status(400).json({
+        message: "Refresh token is required",
+        success: false,
+      });
+      return;
+    }
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.revokeRefreshToken(refreshToken, userId);
+
+    if (!result.success) {
+      res.status(400).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Logged out successfully",
+      success: true,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error during logout",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Get active sessions
+export const getActiveSessions = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const sessions = await authService.getUserActiveSessions(userId, "admin");
+
+    // Mark current session
+    const userAgent = req.headers["user-agent"] || "";
+    const currentSession = sessions.find(
+      (s) =>
+        s.deviceInfo?.userAgent &&
+        userAgent.includes(s.deviceInfo.userAgent.substring(0, 50)),
+    );
+    if (currentSession) {
+      currentSession.isCurrent = true;
+    }
+
+    res.status(200).json({
+      message: "Active sessions retrieved",
+      success: true,
+      sessions,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error fetching sessions",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Revoke specific session
+export const revokeSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const sessionIdValue = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+    const userId = (req as any).user.id;
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.revokeSessionById(sessionIdValue, userId);
+
+    if (!result.success) {
+      res.status(400).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Session revoked successfully",
+      success: true,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error revoking session",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Logout from all devices
+export const logoutAll = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.revokeAllSessions(userId, "admin");
+
+    if (!result.success) {
+      res.status(400).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Logged out from ${result.count} device(s)`,
+      success: true,
+      count: result.count,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error during logout all",
+      success: false,
+    });
+    return;
+  }
+};
+

@@ -56,7 +56,7 @@ export const registerServiceProvider = async (req: Request, res: Response) => {
       name,
       email,
       password: hashedPassword,
-      phone
+      phone,
     });
 
     res.status(201).json({
@@ -113,20 +113,20 @@ export const loginServiceProvider = async (req: Request, res: Response) => {
     // saving last login date
     await serviceProviderRepository.updateLastLogin(checkServiceProvider.id);
 
-    // token generation
-    const token = jwt.sign(
-      {
-        id: checkServiceProvider.id,
-        role: "serviceProvider",
-      },
-      process.env.JWT_SECRET_KEY || "",
-      { expiresIn: "7d" },
+    // generate tokens using auth service
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const tokens = await authService.generateTokens(
+      checkServiceProvider.id,
+      "serviceProvider",
+      req,
     );
 
     res.status(200).json({
       message: `Welcome back ${checkServiceProvider.name} !`,
       success: true,
-      token,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
       checkServiceProvider: {
         id: checkServiceProvider.id,
         name: checkServiceProvider.name,
@@ -297,8 +297,10 @@ export const updateServiceProviderDetails = async (
         .map((sp: any) => ({
           serviceCategoryId: sp.serviceCategoryId || undefined,
           rate: parseFloat(sp.rate),
-          minRate: sp.minRate !== undefined ? parseFloat(sp.minRate) : undefined,
-          maxRate: sp.maxRate !== undefined ? parseFloat(sp.maxRate) : undefined,
+          minRate:
+            sp.minRate !== undefined ? parseFloat(sp.minRate) : undefined,
+          maxRate:
+            sp.maxRate !== undefined ? parseFloat(sp.maxRate) : undefined,
         }));
 
       if (validServicePricing.length > 0) {
@@ -337,8 +339,10 @@ export const updateServiceProviderDetails = async (
           .map((sa: any) => ({
             city: sa.city.trim(),
             areas: Array.isArray(sa.areas)
-              ? sa.areas.filter((area: any) => area && typeof area === "string").map((area: string) => area.trim())
-              : []
+              ? sa.areas
+                  .filter((area: any) => area && typeof area === "string")
+                  .map((area: string) => area.trim())
+              : [],
           }));
 
         if (validServiceAreas.length > 0) {
@@ -370,9 +374,15 @@ export const updateServiceProviderDetails = async (
     if (bankAccount !== undefined) {
       try {
         // Validate required bank account fields
-        if (!bankAccount.accountNumber || !bankAccount.ifsc || !bankAccount.bankName || !bankAccount.accountHolder) {
+        if (
+          !bankAccount.accountNumber ||
+          !bankAccount.ifsc ||
+          !bankAccount.bankName ||
+          !bankAccount.accountHolder
+        ) {
           return res.status(400).json({
-            message: "Bank account requires accountNumber, ifsc, bankName, and accountHolder",
+            message:
+              "Bank account requires accountNumber, ifsc, bankName, and accountHolder",
             success: false,
           });
         }
@@ -381,8 +391,13 @@ export const updateServiceProviderDetails = async (
         const accountNumberLast4 = bankAccount.accountNumber.slice(-4);
 
         // Check if provider already has a primary bank account
-        const existingAccounts = await bankAccountRepository.getProviderBankAccounts(serviceProviderId);
-        const primaryAccount = existingAccounts.find((acc: any) => acc.isPrimary);
+        const existingAccounts =
+          await bankAccountRepository.getProviderBankAccounts(
+            serviceProviderId,
+          );
+        const primaryAccount = existingAccounts.find(
+          (acc: any) => acc.isPrimary,
+        );
 
         if (primaryAccount) {
           // Update existing primary account
@@ -397,10 +412,12 @@ export const updateServiceProviderDetails = async (
               accountType: bankAccount.accountType || "savings",
               upiId: bankAccount.upiId || null,
               branch: bankAccount.branch || null,
-            }
+            },
           );
 
-          console.log(`✅ Bank account updated for provider ${serviceProviderId}`);
+          console.log(
+            `✅ Bank account updated for provider ${serviceProviderId}`,
+          );
         } else {
           // Create new bank account
           await bankAccountRepository.addBankAccount({
@@ -415,7 +432,9 @@ export const updateServiceProviderDetails = async (
             isPrimary: true, // First account is always primary
           });
 
-          console.log(`✅ New bank account created for provider ${serviceProviderId}`);
+          console.log(
+            `✅ New bank account created for provider ${serviceProviderId}`,
+          );
         }
 
         // Store bank account summary in provider profile (for quick access)
@@ -741,7 +760,8 @@ export const toggleAvailability = async (req: Request, res: Response) => {
     // check if provider is currently busy - prevent manual status changes
     if (provider.availabilityStatus === "busy") {
       res.status(403).json({
-        message: "Cannot change availability while service is in progress. Complete the current service first.",
+        message:
+          "Cannot change availability while service is in progress. Complete the current service first.",
         success: false,
         isBusy: true,
       });
@@ -749,8 +769,13 @@ export const toggleAvailability = async (req: Request, res: Response) => {
     }
 
     // check if provider has any active services (in_progress)
-    const { serviceRequestRepository } = await import("#db/repositories/serviceRequests.repository.js");
-    const activeServices = await serviceRequestRepository.findByStatusAndProviderId(serviceProviderId, "in_progress");
+    const { serviceRequestRepository } =
+      await import("#db/repositories/serviceRequests.repository.js");
+    const activeServices =
+      await serviceRequestRepository.findByStatusAndProviderId(
+        serviceProviderId,
+        "in_progress",
+      );
 
     if (activeServices.length > 0) {
       res.status(403).json({
@@ -964,7 +989,8 @@ export const getDashboardStats = async (req: Request, res: Response) => {
   try {
     const serviceProviderId = (req as any).user.id;
 
-    const provider = await serviceProviderRepository.findById(serviceProviderId);
+    const provider =
+      await serviceProviderRepository.findById(serviceProviderId);
     if (!provider) {
       res.status(404).json({
         message: "Service Provider not found",
@@ -974,21 +1000,29 @@ export const getDashboardStats = async (req: Request, res: Response) => {
     }
 
     // Get all service requests for this provider
-    const allRequests = await serviceRequestRepository.findByProviderId(serviceProviderId);
+    const allRequests =
+      await serviceRequestRepository.findByProviderId(serviceProviderId);
 
     // Count by status
     const totalAssignments = allRequests.length;
-    const completedServices = allRequests.filter(r => r.status === 'completed').length;
-    const inProgressServices = allRequests.filter(r => r.status === 'in_progress').length;
-    const assignedServices = allRequests.filter(r => r.status === 'assigned').length;
+    const completedServices = allRequests.filter(
+      (r) => r.status === "completed",
+    ).length;
+    const inProgressServices = allRequests.filter(
+      (r) => r.status === "in_progress",
+    ).length;
+    const assignedServices = allRequests.filter(
+      (r) => r.status === "assigned",
+    ).length;
 
     // Calculate total earnings from completed services
     const totalEarnings = allRequests
-      .filter(r => r.status === 'completed' && r.finalPrice)
+      .filter((r) => r.status === "completed" && r.finalPrice)
       .reduce((sum, r) => sum + Number(r.finalPrice || 0), 0);
 
     // Get rating stats
-    const ratingStats = await reviewsRepository.getProviderStats(serviceProviderId);
+    const ratingStats =
+      await reviewsRepository.getProviderStats(serviceProviderId);
     const averageRating = ratingStats.averageRating || 0;
 
     res.status(200).json({
@@ -1002,7 +1036,7 @@ export const getDashboardStats = async (req: Request, res: Response) => {
         totalEarnings,
         averageRating,
         ratingDistribution: ratingStats.ratingDistribution || [],
-        isAvailable: provider.availabilityStatus === 'available',
+        isAvailable: provider.availabilityStatus === "available",
       },
     });
   } catch (error) {
@@ -1019,7 +1053,8 @@ export const getMonthlyEarnings = async (req: Request, res: Response) => {
     const serviceProviderId = (req as any).user.id;
     const months = parseInt(req.query.months as string) || 6;
 
-    const provider = await serviceProviderRepository.findById(serviceProviderId);
+    const provider =
+      await serviceProviderRepository.findById(serviceProviderId);
     if (!provider) {
       res.status(404).json({
         message: "Service Provider not found",
@@ -1029,27 +1064,45 @@ export const getMonthlyEarnings = async (req: Request, res: Response) => {
     }
 
     // Get completed services for this provider
-    const allRequests = await serviceRequestRepository.findByProviderId(serviceProviderId);
-    const completedRequests = allRequests.filter(r => r.status === 'completed' && r.completedAt);
+    const allRequests =
+      await serviceRequestRepository.findByProviderId(serviceProviderId);
+    const completedRequests = allRequests.filter(
+      (r) => r.status === "completed" && r.completedAt,
+    );
 
     // Group by month
-    const monthlyEarnings: { [key: string]: { month: string; earnings: number } } = {};
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyEarnings: {
+      [key: string]: { month: string; earnings: number };
+    } = {};
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
 
     for (let i = months - 1; i >= 0; i--) {
       const date = new Date();
       date.setMonth(date.getMonth() - i);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       const monthName = monthNames[date.getMonth()];
 
       monthlyEarnings[monthKey] = { month: monthName, earnings: 0 };
     }
 
     // Sum earnings by month
-    completedRequests.forEach(request => {
+    completedRequests.forEach((request) => {
       if (request.completedAt && request.finalPrice) {
         const date = new Date(request.completedAt);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         if (monthlyEarnings[monthKey]) {
           monthlyEarnings[monthKey].earnings += Number(request.finalPrice || 0);
         }
@@ -1077,7 +1130,8 @@ export const getMonthlyPerformance = async (req: Request, res: Response) => {
     const serviceProviderId = (req as any).user.id;
     const months = parseInt(req.query.months as string) || 6;
 
-    const provider = await serviceProviderRepository.findById(serviceProviderId);
+    const provider =
+      await serviceProviderRepository.findById(serviceProviderId);
     if (!provider) {
       res.status(404).json({
         message: "Service Provider not found",
@@ -1087,27 +1141,45 @@ export const getMonthlyPerformance = async (req: Request, res: Response) => {
     }
 
     // Get all service requests for this provider
-    const allRequests = await serviceRequestRepository.findByProviderId(serviceProviderId);
-    const completedRequests = allRequests.filter(r => r.status === 'completed' && r.completedAt);
+    const allRequests =
+      await serviceRequestRepository.findByProviderId(serviceProviderId);
+    const completedRequests = allRequests.filter(
+      (r) => r.status === "completed" && r.completedAt,
+    );
 
     // Group by month
-    const monthlyData: { [key: string]: { month: string; completed: number; earnings: number } } = {};
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyData: {
+      [key: string]: { month: string; completed: number; earnings: number };
+    } = {};
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
 
     for (let i = months - 1; i >= 0; i--) {
       const date = new Date();
       date.setMonth(date.getMonth() - i);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
       const monthName = monthNames[date.getMonth()];
 
       monthlyData[monthKey] = { month: monthName, completed: 0, earnings: 0 };
     }
 
     // Sum by month
-    completedRequests.forEach(request => {
+    completedRequests.forEach((request) => {
       if (request.completedAt) {
         const date = new Date(request.completedAt);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
         if (monthlyData[monthKey]) {
           monthlyData[monthKey].completed += 1;
           monthlyData[monthKey].earnings += Number(request.finalPrice || 0);
@@ -1135,14 +1207,13 @@ export const getProvidersByCategory = async (req: Request, res: Response) => {
   try {
     const { categoryId, city } = req.query;
 
-    if (!categoryId || typeof categoryId !== 'string') {
+    if (!categoryId || typeof categoryId !== "string") {
       res.status(400).json({
         message: "Category ID is required",
         success: false,
       });
       return;
     }
-
 
     // Get category details to find required skills
     const category = await serviceCategory.findById(categoryId);
@@ -1157,12 +1228,12 @@ export const getProvidersByCategory = async (req: Request, res: Response) => {
     // Get all active providers
     const allProviders = await serviceProviderRepository.findAll();
 
-    console.log('📊 Price Estimation Debug:');
-    console.log('  Category ID:', categoryId);
-    console.log('  Category:', category.name);
-    console.log('  Required Skills:', category.requiredSkills);
-    console.log('  Total providers in DB:', allProviders.length);
-    console.log('  City filter:', city || 'none');
+    console.log("📊 Price Estimation Debug:");
+    console.log("  Category ID:", categoryId);
+    console.log("  Category:", category.name);
+    console.log("  Required Skills:", category.requiredSkills);
+    console.log("  Total providers in DB:", allProviders.length);
+    console.log("  City filter:", city || "none");
 
     // Filter providers who match the category requirements
     const matchingProviders = allProviders.filter((provider: any) => {
@@ -1177,25 +1248,32 @@ export const getProvidersByCategory = async (req: Request, res: Response) => {
       // This gives customers more options and realistic price ranges
 
       // Filter by city if provided (only if customer has entered city)
-      if (city && typeof city === 'string' && city.trim() !== '' && provider.serviceArea) {
+      if (
+        city &&
+        typeof city === "string" &&
+        city.trim() !== "" &&
+        provider.serviceArea
+      ) {
         const cityLower = city.toLowerCase().trim();
 
         // Handle both old flat format and new nested format
         let servesCity = false;
         if (Array.isArray(provider.serviceArea)) {
           // New nested format: [{city, areas}]
-          servesCity = provider.serviceArea.some((sa: any) =>
-            sa.city && sa.city.toLowerCase().trim() === cityLower
+          servesCity = provider.serviceArea.some(
+            (sa: any) => sa.city && sa.city.toLowerCase().trim() === cityLower,
           );
         } else if (provider.serviceArea.cities) {
           // Old flat format: {cities: [], areas: []}
-          servesCity = provider.serviceArea.cities.some((c: string) =>
-            c.toLowerCase().trim() === cityLower
+          servesCity = provider.serviceArea.cities.some(
+            (c: string) => c.toLowerCase().trim() === cityLower,
           );
         }
 
         if (!servesCity) {
-          console.log(`  ❌ Filtered out ${provider.name} - doesn't serve city ${city}`);
+          console.log(
+            `  ❌ Filtered out ${provider.name} - doesn't serve city ${city}`,
+          );
           return false;
         }
       }
@@ -1216,13 +1294,15 @@ export const getProvidersByCategory = async (req: Request, res: Response) => {
         id: provider.id,
         name: provider.name,
         baseRate: finalRate,
-        rateUnit: provider.rateUnit || provider.pricingType || 'per-visit',
+        rateUnit: provider.rateUnit || provider.pricingType || "per-visit",
         rating: Number(provider.averageRating) || 0,
         reviewCount: provider.totalReviews || 0,
         completedJobs: provider.totalJobsCompleted || 0,
         skills: provider.skills || [],
         serviceArea: provider.serviceArea,
-        isAvailable: provider.availabilityStatus === 'available' || provider.isAvailable === true,
+        isAvailable:
+          provider.availabilityStatus === "available" ||
+          provider.isAvailable === true,
       };
     });
 
@@ -1246,5 +1326,193 @@ export const getProvidersByCategory = async (req: Request, res: Response) => {
       message: "Error fetching providers",
       success: false,
     });
+  }
+};
+
+// Refresh token endpoint
+export const refreshAccessToken = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      res.status(400).json({
+        message: "Refresh token is required",
+        success: false,
+      });
+      return;
+    }
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.refreshAccessToken(refreshToken, req);
+
+    if (!result.success) {
+      res.status(401).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Token refreshed successfully",
+      success: true,
+      accessToken: result.tokens!.accessToken,
+      refreshToken: result.tokens!.refreshToken,
+      expiresIn: result.tokens!.expiresIn,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error refreshing token",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Logout (revoke current refresh token)
+export const logout = async (req: Request, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+    const userId = (req as any).user.id;
+
+    if (!refreshToken) {
+      res.status(400).json({
+        message: "Refresh token is required",
+        success: false,
+      });
+      return;
+    }
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.revokeRefreshToken(refreshToken, userId);
+
+    if (!result.success) {
+      res.status(400).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Logged out successfully",
+      success: true,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error during logout",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Get active sessions
+export const getActiveSessions = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const sessions = await authService.getUserActiveSessions(
+      userId,
+      "serviceProvider",
+    );
+
+    // Mark current session
+    const userAgent = req.headers["user-agent"] || "";
+    const currentSession = sessions.find(
+      (s) =>
+        s.deviceInfo?.userAgent &&
+        userAgent.includes(s.deviceInfo.userAgent.substring(0, 50)),
+    );
+    if (currentSession) {
+      currentSession.isCurrent = true;
+    }
+
+    res.status(200).json({
+      message: "Active sessions retrieved",
+      success: true,
+      sessions,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error fetching sessions",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Revoke specific session
+export const revokeSession = async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const sessionIdValue = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+    const userId = (req as any).user.id;
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.revokeSessionById(sessionIdValue, userId);
+
+    if (!result.success) {
+      res.status(400).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: "Session revoked successfully",
+      success: true,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error revoking session",
+      success: false,
+    });
+    return;
+  }
+};
+
+// Logout from all devices
+export const logoutAll = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+
+    const { authService } = await import("#drizzleServices/auth.service.js");
+    const result = await authService.revokeAllSessions(
+      userId,
+      "serviceProvider",
+    );
+
+    if (!result.success) {
+      res.status(400).json({
+        message: result.error,
+        success: false,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      message: `Logged out from ${result.count} device(s)`,
+      success: true,
+      count: result.count,
+    });
+    return;
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error during logout all",
+      success: false,
+    });
+    return;
   }
 };

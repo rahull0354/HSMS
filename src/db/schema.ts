@@ -33,6 +33,7 @@ export const customers = pgTable(
     deactivatedAt: timestamp("deactivated_at"),
     reactivationToken: varchar("reactivation_token", { length: 255 }),
     reactivationExpires: timestamp("reactivation_expires"),
+    tokenVersion: integer("token_version").default(0).notNull(), // For immediate session revocation
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -56,6 +57,7 @@ export const admins = pgTable(
     email: varchar("email", { length: 255 }).notNull().unique(),
     password: varchar("password", { length: 255 }).notNull(),
     lastLogin: timestamp("last_login"),
+    tokenVersion: integer("token_version").default(0).notNull(), // For immediate session revocation
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -141,6 +143,7 @@ export const serviceProviders = pgTable(
     deactivatedAt: timestamp("deactivated_at"),
     reactivationToken: varchar("reactivation_token", { length: 255 }),
     reactivationExpires: timestamp("reactivation_expires"),
+    tokenVersion: integer("token_version").default(0).notNull(), // For immediate session revocation
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -777,3 +780,40 @@ export const provider_bank_accounts = pgTable(
 );
 
 export type NewProviderBankAccount = typeof provider_bank_accounts.$inferInsert;
+
+export const refreshTokens = pgTable(
+  "refresh_tokens",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull(),
+    userType: varchar("user_type", { length: 50 }).notNull(), // "customer", "serviceProvider", "admin"
+    token: varchar("token", { length: 500 }).notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    revoked: boolean("revoked").default(false).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    deviceInfo: jsonb("device_info").$type<{
+      browser?: string;
+      os?: string;
+      device?: string;
+      userAgent?: string;
+    }>(),
+    ipAddress: varchar("ip_address", { length: 50 }),
+    tokenVersion: integer("token_version").notNull(), // Track token version for immediate revocation
+  },
+  (table) => ({
+    tokenIdx: index("refresh_tokens_token_idx").on(table.token),
+    userIdIdx: index("refresh_tokens_user_id_idx").on(table.userId),
+    userTypeIdx: index("refresh_tokens_user_type_idx").on(table.userType),
+    expiresAtIdx: index("refresh_tokens_expires_at_idx").on(table.expiresAt),
+    revokedIdx: index("refresh_tokens_revoked_idx").on(table.revoked),
+    // Composite index for active user tokens
+    userActiveTokensIdx: index("refresh_tokens_user_active_idx")
+      .on(table.userId, table.revoked)
+      .where(sql`revoked = false`),
+  }),
+);
+
+export type NewRefreshToken = typeof refreshTokens.$inferInsert;

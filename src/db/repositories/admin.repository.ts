@@ -46,6 +46,15 @@ export class AdminRepository {
     return result[0] || null;
   }
 
+  async update(id: string, data: Partial<NewAdmin>) {
+    const result = await db
+      .update(admins)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(admins.id, id))
+      .returning();
+    return result[0] || null;
+  }
+
   async count() {
     const result = await db
       .select({ count: sql<number>`count(*)` })
