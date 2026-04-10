@@ -50,7 +50,20 @@ export const drizzleAuthMiddleware = (allowedRoles: String[]) => {
         })
         return
       }
-      
+
+      // Check if user is active (admins don't have isActive field, always active)
+      if (
+        decoded.role !== "admin" &&
+        'isActive' in user &&
+        user.isActive === false
+      ) {
+        res.status(403).json({
+          message: "User account is inactive",
+          success: false,
+        });
+        return;
+      }
+
       (req as any).user = decoded;
       next();
     } catch (error) {
